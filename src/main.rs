@@ -1,8 +1,9 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use rand::prelude::*;
 use rand_distr::Exp;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::sync::atomic::AtomicUsize;
 
 #[derive(Clone, Debug)]
 struct Block {
@@ -52,13 +53,23 @@ impl PartialOrd for Task {
     }
 }
 
+#[derive(ValueEnum, Debug, Clone, Default, PartialEq)]
+#[clap(rename_all = "kebab_case")]
+enum TieBreakingRule {
+    #[default]
+    Longest,
+    Random,
+    Time,
+}
+
 struct BlockchainSimulator {
     current_round: i64,
     current_time: i64,
     delay: i64,
     generation_time: i64,
-    current_block: Vec<usize>,             // ブロックIDを保存
-    current_mining_task: Vec<Option<i64>>, // 現在のマイニングタスク時間
+    tie: TieBreakingRule,
+    current_block: Vec<usize>,          // ブロックIDを保存
+    next_mining_time: Vec<Option<i64>>, // 現在のマイニングタスク時間
     hashrate: Vec<i64>,
     total_hashrate: i64,
     num_main: Vec<Vec<i64>>,
@@ -66,12 +77,18 @@ struct BlockchainSimulator {
     main_length: i64,
     num_nodes: usize,
     blocks: Vec<Block>, // 全ブロックを保存
-    next_block_id: usize,
     rng: StdRng,
 }
 
 impl BlockchainSimulator {
-    fn new(num_nodes: usize, seed: u64, end_round: i64) -> Self {
+    fn new(
+        num_nodes: usize,
+        seed: u64,
+        end_round: i64,
+        tie: TieBreakingRule,
+        delay: i64,
+        generation_time: i64,
+    ) -> Self {
         let mut hashrate = vec![1; num_nodes];
         if num_nodes > 0 {
             hashrate[0] = (num_nodes - 1) as i64;
@@ -82,10 +99,11 @@ impl BlockchainSimulator {
         let mut simulator = Self {
             current_round: 0,
             current_time: 0,
-            delay: 6000,
-            generation_time: 600000,
+            delay,
+            generation_time,
+            tie,
             current_block: vec![0; num_nodes], // 全ノードがジェネシスブロックから開始
-            current_mining_task: vec![None; num_nodes],
+            next_mining_time: vec![None; num_nodes],
             hashrate,
             total_hashrate,
             num_main: vec![vec![0; num_nodes]; 3],
@@ -93,7 +111,6 @@ impl BlockchainSimulator {
             main_length: 0,
             num_nodes,
             blocks: Vec::new(),
-            next_block_id: 0,
             rng: StdRng::seed_from_u64(seed),
         };
 
@@ -107,23 +124,15 @@ impl BlockchainSimulator {
             id: 0,
         };
         simulator.blocks.push(genesis_block);
-        simulator.next_block_id = 1;
 
         simulator
     }
 
-    fn prop(&self, i: usize, j: usize) -> i64 {
-        if i == j { 0 } else { self.delay }
+    fn propagation_time(&self, from: usize, to: usize) -> i64 {
+        if from == to { 0 } else { self.delay }
     }
 
-    fn choose_mainchain(
-        &mut self,
-        block1_id: usize,
-        block2_id: usize,
-        _from: usize,
-        to: usize,
-        tie: i32,
-    ) {
+    fn choose_mainchain(&mut self, block1_id: usize, block2_id: usize, _from: usize, to: usize) {
         let block1 = &self.blocks[block1_id];
         let block2 = &self.blocks[block2_id];
 
@@ -133,14 +142,22 @@ impl BlockchainSimulator {
         }
 
         if block1.height == block2.height {
-            if tie == 1 && block2.minter != to as i32 && block1.rand < block2.rand {
+            if self.tie == TieBreakingRule::Random
+                && block2.minter != to as i32
+                && block1.rand < block2.rand
+            {
                 self.current_block[to] = block1_id;
             }
 
-            if tie == 2 && block2.minter != to as i32 && block1.time > block2.time {
+            if self.tie == TieBreakingRule::Time
+                && block2.minter != to as i32
+                && block1.time > block2.time
+            {
                 self.current_block[to] = block1_id;
             }
         }
+
+        //self.current_block[to] = block2_id;
     }
 
     /*
@@ -187,7 +204,7 @@ impl BlockchainSimulator {
     }
     */
 
-    fn simulation(&mut self, tie: i32) {
+    fn simulation(&mut self) {
         let mut task_queue = BinaryHeap::new();
 
         // 初期マイニングタスクをスケジュール
@@ -203,7 +220,7 @@ impl BlockchainSimulator {
                 flag: TaskType::BlockGeneration { minter: i },
             };
 
-            self.current_mining_task[i] = Some(time);
+            self.next_mining_time[i] = Some(time);
             task_queue.push(task);
         }
 
@@ -214,7 +231,7 @@ impl BlockchainSimulator {
             match current_task.flag {
                 TaskType::BlockGeneration { minter } => {
                     // 現在のマイニングタスクかチェック
-                    if let Some(task_time) = self.current_mining_task[minter] {
+                    if let Some(task_time) = self.next_mining_time[minter] {
                         if task_time != current_task.time {
                             continue;
                         }
@@ -224,18 +241,18 @@ impl BlockchainSimulator {
 
                     // 新しいブロック作成
                     let current_block_id = self.current_block[minter];
+                    static BLOCK_ID: AtomicUsize = AtomicUsize::new(1);
                     let new_block = Block {
                         height: self.blocks[current_block_id].height + 1,
                         prev_block_id: Some(current_block_id),
                         minter: minter as i32,
                         time: self.current_time,
                         rand: (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
-                        id: self.next_block_id,
+                        id: BLOCK_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
                     };
 
                     self.blocks.push(new_block.clone());
                     self.current_block[minter] = new_block.id;
-                    self.next_block_id += 1;
 
                     // 次のマイニングタスクをスケジュール
                     let exp_dist = Exp::new(1.0).unwrap();
@@ -250,13 +267,13 @@ impl BlockchainSimulator {
                         flag: TaskType::BlockGeneration { minter },
                     };
 
-                    self.current_mining_task[minter] = Some(next_time);
+                    self.next_mining_time[minter] = Some(next_time);
                     task_queue.push(next_task);
 
                     // 伝播タスクを作成
                     for i in 0..self.num_nodes {
                         let prop_task = Task {
-                            time: self.current_time + self.prop(minter, i),
+                            time: self.current_time + self.propagation_time(minter, i),
                             flag: TaskType::Propagation {
                                 from: minter,
                                 to: i,
@@ -271,7 +288,7 @@ impl BlockchainSimulator {
                     }
 
                     log::debug!(
-                        "block generation, current time: {}, minter{}, block height: {}",
+                        "Generation : time: {}, minter: {}, height: {}",
                         self.current_time,
                         new_block.minter,
                         new_block.height
@@ -280,7 +297,7 @@ impl BlockchainSimulator {
 
                 TaskType::Propagation { from, to, block_id } => {
                     log::debug!(
-                        "block propagation, current time: {}, from: {}, to: {}, height: {}",
+                        "Propagation: time: {}, from: {}, to: {}, height: {}",
                         self.current_time,
                         from,
                         to,
@@ -288,7 +305,7 @@ impl BlockchainSimulator {
                     );
 
                     let current_block_id = self.current_block[to];
-                    self.choose_mainchain(block_id, current_block_id, from, to, tie);
+                    self.choose_mainchain(block_id, current_block_id, from, to);
                 }
             }
         }
@@ -331,8 +348,18 @@ struct Cli {
     #[clap(short, long)]
     seed: Option<u64>,
 
-    #[clap(short, long, default_value = "10")]
+    #[clap(long, default_value = "10")]
     end_round: i64,
+
+    #[clap(long, value_enum, default_value_t = TieBreakingRule::Longest)]
+    #[arg(value_enum)]
+    tie: TieBreakingRule,
+
+    #[clap(long, default_value = "6000")]
+    delay: i64, // ブロック伝播時間
+
+    #[clap(long, default_value = "600000")]
+    generation_time: i64, // ブロック生成時間
 }
 
 fn main() {
@@ -341,18 +368,19 @@ fn main() {
     let args = Cli::parse();
     let seed = args.seed.unwrap_or(rand::thread_rng().r#gen::<u64>());
 
-    log::info!(
-        "num_nodes: {}, seed: {}, end_round: {}",
+    log::info!("args: {:?}", args);
+    log::info!("seed: {}", seed);
+
+    let mut simulator = BlockchainSimulator::new(
         args.num_nodes,
         seed,
-        args.end_round
+        args.end_round,
+        args.tie,
+        args.delay,
+        args.generation_time,
     );
 
-    let mut simulator = BlockchainSimulator::new(args.num_nodes, seed, args.end_round);
-
     simulator.print_hashrates();
-    simulator.simulation(10);
+    simulator.simulation();
     simulator.print_blockchain();
-
-    log::info!("block propagation time: {}", simulator.delay);
 }
