@@ -1,0 +1,11 @@
+[package]
+name = "blockchain-sim"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.39", features = ["derive"] }
+env_logger = "0.11.8"
+log = "0.4.27"
+rand = "0.8"
+rand_distr = "0.4"
