@@ -72,9 +72,7 @@ struct BlockchainSimulator {
     next_mining_time: Vec<Option<i64>>, // 現在のマイニングタスク時間
     hashrate: Vec<i64>,
     total_hashrate: i64,
-    num_main: Vec<Vec<i64>>,
     end_round: i64,
-    main_length: i64,
     num_nodes: usize,
     blocks: Vec<Block>, // 全ブロックを保存
     rng: StdRng,
@@ -106,9 +104,9 @@ impl BlockchainSimulator {
             next_mining_time: vec![None; num_nodes],
             hashrate,
             total_hashrate,
-            num_main: vec![vec![0; num_nodes]; 3],
+            //num_main: vec![vec![0; num_nodes]; 3],
             end_round,
-            main_length: 0,
+            //main_length: 0,
             num_nodes,
             blocks: Vec::new(),
             rng: StdRng::seed_from_u64(seed),
@@ -161,7 +159,7 @@ impl BlockchainSimulator {
     }
 
     /*
-    fn main_chain(&mut self, block_id: usize, tie: usize) {
+    fn mainchain(&mut self, block_id: usize, tie: usize) {
         let block = &self.blocks[block_id];
 
         if block.height != self.end_round {
@@ -175,14 +173,13 @@ impl BlockchainSimulator {
                 if let Some(prev_id) = self.blocks[cur_block_id].prev_block_id {
                     cur_block_id = prev_id;
                 } else {
-                    println!("sugeeeee");
                     break;
                 }
             }
 
             if self.blocks[cur_block_id].height > 0 {
                 let minter = self.blocks[cur_block_id].minter as usize;
-                if minter < self.n {
+                if minter < self.num_nodes {
                     self.num_main[tie][minter] += 1;
                 }
             }
@@ -191,7 +188,7 @@ impl BlockchainSimulator {
             let mut cur_block_id = block_id;
             while self.blocks[cur_block_id].height > self.main_length {
                 let minter = self.blocks[cur_block_id].minter as usize;
-                if minter < self.n {
+                if minter < self.num_nodes {
                     self.num_main[tie][minter] += 1;
                 }
                 if let Some(prev_id) = self.blocks[cur_block_id].prev_block_id {
@@ -297,7 +294,7 @@ impl BlockchainSimulator {
 
                 TaskType::Propagation { from, to, block_id } => {
                     log::debug!(
-                        "Propagation: time: {}, from: {}, to: {}, height: {}",
+                        "Propagation: time: {}, {}->{}, height: {}",
                         self.current_time,
                         from,
                         to,
@@ -314,7 +311,6 @@ impl BlockchainSimulator {
     fn reset(&mut self) {
         self.current_round = 0;
         self.current_time = 0;
-        self.main_length = 0;
         for i in 0..self.num_nodes {
             self.current_block[i] = 0; // ジェネシスブロックID
         }
@@ -378,15 +374,16 @@ struct Cli {
 fn main() {
     env_logger::init();
 
-    let args = Cli::parse();
-    let seed = args.seed.unwrap_or(rand::thread_rng().r#gen::<u64>());
+    let mut args = Cli::parse();
+    if args.seed.is_none() {
+        args.seed = Some(rand::thread_rng().r#gen::<u64>());
+    }
 
     log::info!("args: {:?}", args);
-    log::info!("seed: {}", seed);
 
     let mut simulator = BlockchainSimulator::new(
         args.num_nodes,
-        seed,
+        args.seed.unwrap(),
         args.end_round,
         args.tie,
         args.delay,
