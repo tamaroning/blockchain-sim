@@ -338,6 +338,19 @@ impl BlockchainSimulator {
             );
         }
     }
+
+    fn print_summary(&self) {
+        log::info!("Simulation Summary:");
+        log::info!("- Current time: {}", self.current_time);
+        log::info!("- Current round: {}", self.current_round);
+        log::info!("- Total blocks: {}", self.blocks.len());
+        let main_chain_length = self.blocks.iter().map(|b| b.height).max().unwrap_or(0);
+        log::info!("- Main chain length: {}", main_chain_length);
+        log::info!(
+            "- Avg. time/block: {}",
+            self.current_time as f64 / main_chain_length as f64
+        );
+    }
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -383,4 +396,5 @@ fn main() {
     simulator.print_hashrates();
     simulator.simulation();
     simulator.print_blockchain();
+    simulator.print_summary();
 }
