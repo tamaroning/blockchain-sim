@@ -18,7 +18,7 @@ struct Block {
 #[derive(Clone, Debug)]
 struct Task {
     time: i64,
-    flag: TaskType,
+    ty: TaskType,
 }
 
 #[derive(Clone, Debug)]
@@ -217,7 +217,7 @@ impl BlockchainSimulator {
 
             let task = Task {
                 time,
-                flag: TaskType::BlockGeneration { minter: i },
+                ty: TaskType::BlockGeneration { minter: i },
             };
 
             self.next_mining_time[i] = Some(time);
@@ -228,7 +228,7 @@ impl BlockchainSimulator {
             let current_task = task_queue.pop().unwrap();
             self.current_time = current_task.time;
 
-            match current_task.flag {
+            match current_task.ty {
                 TaskType::BlockGeneration { minter } => {
                     // 現在のマイニングタスクかチェック
                     if let Some(task_time) = self.next_mining_time[minter] {
@@ -264,7 +264,7 @@ impl BlockchainSimulator {
 
                     let next_task = Task {
                         time: next_time,
-                        flag: TaskType::BlockGeneration { minter },
+                        ty: TaskType::BlockGeneration { minter },
                     };
 
                     self.next_mining_time[minter] = Some(next_time);
@@ -274,7 +274,7 @@ impl BlockchainSimulator {
                     for i in 0..self.num_nodes {
                         let prop_task = Task {
                             time: self.current_time + self.propagation_time(minter, i),
-                            flag: TaskType::Propagation {
+                            ty: TaskType::Propagation {
                                 from: minter,
                                 to: i,
                                 block_id: new_block.id,
