@@ -1,6 +1,7 @@
 use clap::{Parser, ValueEnum};
 use rand::prelude::*;
 use rand_distr::Exp;
+use rand_distr::num_traits::Pow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicUsize;
@@ -13,6 +14,8 @@ struct Block {
     time: i64,
     rand: i64,
     id: usize,
+    /// 大きいほど難しい。
+    difficulty: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -120,6 +123,7 @@ impl BlockchainSimulator {
             time: 0,
             rand: 0,
             id: 0,
+            difficulty: 1.,
         };
         simulator.blocks.push(genesis_block);
 
@@ -207,6 +211,7 @@ impl BlockchainSimulator {
         // 初期マイニングタスクをスケジュール
         for i in 0..self.num_nodes {
             let exp_dist = Exp::new(1.0).unwrap();
+            // TODO: 難易度調整
             let time = (exp_dist.sample(&mut self.rng)
                 * self.generation_time as f64
                 * self.total_hashrate as f64
@@ -214,7 +219,9 @@ impl BlockchainSimulator {
 
             let task = Task {
                 time,
-                ty: TaskType::BlockGeneration { minter: i },
+                ty: TaskType::BlockGeneration {
+                    minter: i,
+                },
             };
 
             self.next_mining_time[i] = Some(time);
@@ -238,6 +245,48 @@ impl BlockchainSimulator {
 
                     // 新しいブロック作成
                     let current_block_id = self.current_block[minter];
+                    let current_block = &self.blocks[current_block_id];
+                    let current_difficulty = current_block.difficulty;
+
+                    let new_height = self.blocks[current_block_id].height + 1;
+
+                    let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000
+                    {
+                        let (first_block_in_epoch, height) = {
+                            let mut block_id = current_block_id;
+                            for _ in 0..2000 {
+                                if let Some(prev_id) = self.blocks[block_id].prev_block_id {
+                                    block_id = prev_id;
+                                } else {
+                                    break;
+                                }
+                            }
+                            (block_id, self.blocks[block_id].height)
+                        };
+                        let average_generation_time =
+                            (self.current_time - self.blocks[first_block_in_epoch].time) as f64
+                                / (current_block.height - height) as f64;
+                        let ratio = average_generation_time / self.generation_time as f64;
+                        let d = if ratio < 0.5 {
+                            current_difficulty * 0.25
+                        } else if ratio > 2.0 {
+                            current_difficulty * 4.
+                        } else {
+                            current_difficulty / ratio
+                        };
+                        log::warn!(
+                            "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
+                            new_height,
+                            average_generation_time,
+                            ratio,
+                            current_difficulty,
+                            d
+                        );
+                        d
+                    } else {
+                        current_difficulty
+                    };
+
                     static BLOCK_ID: AtomicUsize = AtomicUsize::new(1);
                     let new_block = Block {
                         height: self.blocks[current_block_id].height + 1,
@@ -246,18 +295,19 @@ impl BlockchainSimulator {
                         time: self.current_time,
                         rand: (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         id: BLOCK_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+                        difficulty: new_difficulty,
                     };
 
                     self.blocks.push(new_block.clone());
                     self.current_block[minter] = new_block.id;
 
-                    // 次のマイニングタスクをスケジュール
                     let exp_dist = Exp::new(1.0).unwrap();
                     let next_time = self.current_time
                         + (exp_dist.sample(&mut self.rng)
                             * self.generation_time as f64
-                            * self.total_hashrate as f64
-                            / self.hashrate[minter] as f64) as i64;
+                            * new_difficulty
+                            / (self.hashrate[minter] as f64 / self.total_hashrate as f64))
+                            as i64;
 
                     let next_task = Task {
                         time: next_time,
@@ -285,16 +335,17 @@ impl BlockchainSimulator {
                     }
 
                     log::debug!(
-                        "Generation : time: {}, minter: {}, height: {}",
+                        "📦 time: {}, minter: {}, difficulty: {}, height: {}",
                         self.current_time,
                         new_block.minter,
+                        new_block.difficulty,
                         new_block.height
                     );
                 }
 
                 TaskType::Propagation { from, to, block_id } => {
                     log::debug!(
-                        "Propagation: time: {}, {}->{}, height: {}",
+                        "🚚 time: {}, {}->{}, height: {}",
                         self.current_time,
                         from,
                         to,
@@ -324,8 +375,9 @@ impl BlockchainSimulator {
         log::info!("Blockchain:");
         for block in &self.blocks {
             log::info!(
-                "Block ID: {}, Height: {}, Minter: {}, Time: {}, Prev Block ID: {:?}, Rand: {}",
+                "Block ID: {}, Difficulty: {}, Height: {}, Minter: {}, Time: {}, Prev Block ID: {:?}, Rand: {}",
                 block.id,
+                block.difficulty,
                 block.height,
                 block.minter,
                 block.time,
@@ -342,6 +394,11 @@ impl BlockchainSimulator {
         log::info!("- Total blocks: {}", self.blocks.len());
         let main_chain_length = self.blocks.iter().map(|b| b.height).max().unwrap_or(0);
         log::info!("- Main chain length: {}", main_chain_length);
+        // diffculty
+        log::info!(
+            "Difficulty: {}",
+            self.blocks.last().map_or(0.0, |b| b.difficulty)
+        );
         log::info!(
             "- Avg. time/block: {}",
             self.current_time as f64 / main_chain_length as f64
