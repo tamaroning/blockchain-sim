@@ -47,10 +47,13 @@ def main():
     # Sort by round
     df = df.sort_values("round")
 
-    # Calculate moving average
+    # Convert mining time from ms to seconds
+    df["mining_time_sec"] = df["mining_time"] / 1000 / 1000
+
+    # Calculate moving average in seconds
     window_size = args.window
     df["mining_time_ma"] = (
-        df["mining_time"].rolling(window=window_size, min_periods=1).mean()
+        df["mining_time_sec"].rolling(window=window_size, min_periods=1).mean()
     )
 
     # Plot setup - single plot with dual y-axes
@@ -59,7 +62,7 @@ def main():
     # Left y-axis: Mining time (moving average)
     color1 = "tab:red"
     ax1.set_xlabel("Round (Time)")
-    ax1.set_ylabel("Mining Time (ms)", color=color1)
+    ax1.set_ylabel("Mining Time (sec)", color=color1)
     line1 = ax1.plot(
         df["round"],
         df["mining_time_ma"],
@@ -69,10 +72,16 @@ def main():
     )
     ax1.tick_params(axis="y", labelcolor=color1)
 
+    # Prevent scientific notation on y-axis
+    from matplotlib.ticker import ScalarFormatter
+
+    ax1.yaxis.set_major_formatter(ScalarFormatter())
+    ax1.ticklabel_format(style="plain", axis="y")
+
     # Apply log scale if requested
     if args.log_scale:
         ax1.set_yscale("log")
-        ax1.set_ylabel("Mining Time (ms) - Log Scale", color=color1)
+        ax1.set_ylabel("Mining Time (sec) - Log Scale", color=color1)
 
     # Right y-axis: Difficulty
     ax2 = ax1.twinx()
@@ -112,8 +121,8 @@ def main():
     print(f"CSV file: {args.csv_file}")
     print(f"Total blocks: {len(df)}")
     print(f"Average difficulty: {df['difficulty'].mean():.2f}")
-    print(f"Average mining time: {df['mining_time'].mean():.2f} ms")
-    print(f"Mining time std deviation: {df['mining_time'].std():.2f} ms")
+    print(f"Average mining time: {df['mining_time_sec'].mean():.3f} sec")
+    print(f"Mining time std deviation: {df['mining_time_sec'].std():.3f} sec")
     print(f"Moving average window size: {window_size}")
 
     # Display first few rows
