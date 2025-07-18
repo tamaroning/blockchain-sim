@@ -4,7 +4,7 @@ import sys
 
 
 def run_cargo_command(
-    delta, generation_time=600000, end_round=80000, protocol="ethereum"
+    delta, num_nodes=100, generation_time=600000, end_round=80000, protocol="bitcoin"
 ):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
@@ -18,10 +18,11 @@ def run_cargo_command(
     delay = int(delta * generation_time)
 
     # 出力ファイル名を設定
-    output_file = f"data/{delta}.csv"
+    output_file = f"data/{protocol}-{delta}.csv"
 
     cmd = [
         "../target/release/blockchain-sim",
+        f"--num-nodes={num_nodes}",
         f"--end-round={end_round}",
         f"--delay={delay}",
         f"--generation-time={generation_time}",

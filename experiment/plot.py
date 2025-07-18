@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import glob
 import os
+import argparse
 
 
 def plot_csv_files(csv_pattern="*.csv", output_file="plot.png"):
@@ -93,13 +94,14 @@ def plot_csv_files(csv_pattern="*.csv", output_file="plot.png"):
     plt.show()
 
 
-def plot_specific_deltas(delta_values=None, output_file="plot.png"):
+def plot_specific_deltas(delta_values=None, output_file="plot.png", protocol=""):
     """
     特定のdelta値のCSVファイルのみをプロットする
 
     Args:
         delta_values (list): プロットするdelta値のリスト
         output_file (str): 出力画像ファイル名
+        protocol (str): プロトコル名（例: "bitcoin", "ethereum"）
     """
     if delta_values is None:
         delta_values = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
@@ -110,7 +112,10 @@ def plot_specific_deltas(delta_values=None, output_file="plot.png"):
     plotted_count = 0
 
     for i, delta in enumerate(delta_values):
-        csv_file = f"data/{delta}.csv"
+        if protocol:
+            csv_file = f"data/{protocol}-{delta}.csv"
+        else:
+            csv_file = f"data/{delta}.csv"
 
         if not os.path.exists(csv_file):
             print(f"警告: {csv_file} が見つかりません。")
@@ -152,7 +157,10 @@ def plot_specific_deltas(delta_values=None, output_file="plot.png"):
     # グラフの設定
     plt.xlabel("Round", fontsize=12)
     plt.ylabel("Difficulty", fontsize=12)
-    plt.title("Difficulty vs Round for Different Delta Values", fontsize=14)
+    title = f"Difficulty vs Round for Different Delta Values"
+    if protocol:
+        title += f" ({protocol.capitalize()})"
+    plt.title(title, fontsize=14)
     plt.legend(loc="best", fontsize=10)
     plt.grid(True, alpha=0.3)
 
@@ -166,15 +174,51 @@ def plot_specific_deltas(delta_values=None, output_file="plot.png"):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="CSVファイルをプロットする")
+    parser.add_argument(
+        "--protocol",
+        type=str,
+        default="bitcoin",
+        help="プロトコル名を指定 (例: bitcoin, ethereum)",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="plot.png",
+        help="出力ファイル名 (デフォルト: plot-<protocol>.png)",
+    )
+    parser.add_argument(
+        "--deltas",
+        type=str,
+        default="0.001,0.01,0.05,0.1,0.25,0.5,0.75,1.0",
+        help="delta値をカンマ区切りで指定 (デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5,0.75,1.0)",
+    )
+
+    args = parser.parse_args()
+
+    # delta値をパース
+    try:
+        delta_values = [float(d.strip()) for d in args.deltas.split(",")]
+    except ValueError:
+        print("エラー: delta値の形式が正しくありません。")
+        return
+
+    # 出力ファイル名にプロトコル名を含める
+    if args.output == "plot.png":
+        output_file = f"plot-{args.protocol}.png"
+    else:
+        output_file = args.output
+
     print("CSV プロットスクリプトを実行中...")
+    if args.protocol:
+        print(f"プロトコル: {args.protocol}")
+    print(f"Delta値: {delta_values}")
+    print(f"出力ファイル: {output_file}")
 
-    # 方法1: 特定のdelta値のCSVファイルをプロット
-    print("\n=== 特定のdelta値でプロット ===")
-    plot_specific_deltas()
-
-    # 方法2: 全てのCSVファイルをプロット（コメントアウト）
-    # print("\n=== 全CSVファイルをプロット ===")
-    # plot_csv_files()
+    # プロット実行
+    plot_specific_deltas(
+        delta_values=delta_values, output_file=output_file, protocol=args.protocol
+    )
 
 
 if __name__ == "__main__":
