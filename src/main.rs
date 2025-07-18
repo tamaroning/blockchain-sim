@@ -17,6 +17,8 @@ struct Block {
     id: usize,
     /// 大きいほど難しい。
     difficulty: f64,
+    /// マイニングにかかった時間
+    mining_time: i64,
 }
 
 #[derive(Clone, Debug, Hash)]
@@ -70,6 +72,8 @@ enum TieBreakingRule {
 struct Record {
     round: u32,
     difficulty: f64,
+    /// 実際のブロック生成時間
+    mining_time: i64,
 }
 
 #[derive(ValueEnum, Debug, Clone, Default, PartialEq)]
@@ -151,6 +155,7 @@ impl BlockchainSimulator {
             rand: 0,
             id: 0,
             difficulty: 1.,
+            mining_time: 0,
         };
         simulator.blocks.push(genesis_block);
 
@@ -277,17 +282,27 @@ impl BlockchainSimulator {
                         continue;
                     }
 
-                    // 新しいブロック作成
                     let current_block_id = self.current_block[minter];
                     let current_block = &self.blocks[current_block_id];
-
                     // 難易度調整
                     let new_difficulty = self.calculate_new_difficulty(current_block);
+
+                    // 次のマイニングタスクをスケジュール
+                    let Some(next_time) = self.next_mining_time[minter] else {
+                        unreachable!("next_mining_time should be set for all nodes");
+                    };
+                    self.schedule_next_mining_task(minter, next_time, new_difficulty);
+                    let mining_time = self.next_mining_time[minter].unwrap() - self.current_time;
+
+                    let current_block_id = self.current_block[minter];
+                    let current_block = &self.blocks[self.current_block[minter]];
+
                     //if current_block.height % 2000 == 0 {
                     if let Some(csv) = &mut self.csv {
                         csv.serialize(&Record {
                             round: current_block.height as u32,
                             difficulty: new_difficulty,
+                            mining_time: current_block.mining_time,
                         })
                         .expect("Failed to write CSV record");
                     }
@@ -302,6 +317,7 @@ impl BlockchainSimulator {
                         rand: (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         id: BLOCK_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst),
                         difficulty: new_difficulty,
+                        mining_time,
                     };
 
                     self.blocks.push(new_block.clone());
@@ -309,12 +325,6 @@ impl BlockchainSimulator {
                     if self.current_round < new_block.height {
                         self.current_round = new_block.height;
                     }
-
-                    // 次のマイニングタスクをスケジュール
-                    let Some(next_time) = self.next_mining_time[minter] else {
-                        unreachable!("next_mining_time should be set for all nodes");
-                    };
-                    self.schedule_next_mining_task(minter, next_time, new_difficulty);
 
                     // 伝播タスクをスケジュール
                     for i in 0..self.num_nodes {

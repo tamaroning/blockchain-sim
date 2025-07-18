@@ -4,7 +4,7 @@ import sys
 
 
 def run_cargo_command(
-    delta, num_nodes=100, generation_time=600000, end_round=80000, protocol="bitcoin"
+    delta, num_nodes=100, generation_time=600000, end_round=80000, protocol="ethereum"
 ):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
