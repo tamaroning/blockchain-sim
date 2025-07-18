@@ -1,9 +1,9 @@
 use clap::{Parser, ValueEnum};
+use priority_queue::PriorityQueue;
 use rand::prelude::*;
 use rand_distr::Exp;
 use serde::Serialize;
 use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 
@@ -19,13 +19,13 @@ struct Block {
     difficulty: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 struct Task {
     time: i64,
     ty: TaskType,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 enum TaskType {
     BlockGeneration {
         minter: usize,
@@ -88,6 +88,9 @@ struct BlockchainSimulator {
     rng: StdRng,
     /// CSV出力用のライター
     csv: Option<csv::Writer<std::fs::File>>,
+
+    /// タスクキュー
+    task_queue: PriorityQueue<Task, i64>,
 }
 
 impl BlockchainSimulator {
@@ -107,6 +110,8 @@ impl BlockchainSimulator {
 
         let total_hashrate = hashrate.iter().sum();
 
+        let task_queue = PriorityQueue::<Task, i64>::new();
+
         let mut simulator = Self {
             current_round: 0,
             current_time: 0,
@@ -124,6 +129,7 @@ impl BlockchainSimulator {
             blocks: Vec::new(),
             rng: StdRng::seed_from_u64(seed),
             csv,
+            task_queue,
         };
 
         // ジェネシスブロック作成
@@ -139,6 +145,16 @@ impl BlockchainSimulator {
         simulator.blocks.push(genesis_block);
 
         simulator
+    }
+
+    fn enqueue_task(&mut self, task: Task) {
+        let time = task.time;
+        // PriorityQueueは最大キューなので符号反転する
+        self.task_queue.push(task, -time);
+    }
+
+    fn pop_task(&mut self) -> Option<Task> {
+        self.task_queue.pop().map(|(task, _)| task)
     }
 
     fn propagation_time(&self, from: usize, to: usize) -> i64 {
@@ -218,8 +234,6 @@ impl BlockchainSimulator {
 
     /// シミュレーションを実行
     fn simulation(&mut self) {
-        let mut task_queue = BinaryHeap::new();
-
         // 初期マイニングタスクをスケジュール
         for i in 0..self.num_nodes {
             let exp_dist = Exp::new(1.0).unwrap();
@@ -235,11 +249,11 @@ impl BlockchainSimulator {
             };
 
             self.next_mining_time[i] = Some(time);
-            task_queue.push(task);
+            self.enqueue_task(task);
         }
 
-        while !task_queue.is_empty() && self.current_round < self.end_round {
-            let current_task = task_queue.pop().unwrap();
+        while !self.task_queue.is_empty() && self.current_round < self.end_round {
+            let current_task = self.pop_task().expect("Task queue should not be empty");
             self.current_time = current_task.time;
 
             match current_task.ty {
@@ -259,6 +273,7 @@ impl BlockchainSimulator {
 
                     // 難易度調整
                     let new_difficulty = self.calculate_new_difficulty(current_block);
+                    //if current_block.height % 2000 == 0 {
                     if let Some(csv) = &mut self.csv {
                         csv.serialize(&Record {
                             round: current_block.height as u32,
@@ -266,6 +281,7 @@ impl BlockchainSimulator {
                         })
                         .expect("Failed to write CSV record");
                     }
+                    //}
 
                     static BLOCK_ID: AtomicUsize = AtomicUsize::new(1);
                     let new_block = Block {
@@ -288,12 +304,7 @@ impl BlockchainSimulator {
                     let Some(next_time) = self.next_mining_time[minter] else {
                         unreachable!("next_mining_time should be set for all nodes");
                     };
-                    self.schedule_next_mining_task(
-                        &mut task_queue,
-                        minter,
-                        next_time,
-                        new_difficulty,
-                    );
+                    self.schedule_next_mining_task(minter, next_time, new_difficulty);
 
                     // 伝播タスクをスケジュール
                     for i in 0..self.num_nodes {
@@ -306,7 +317,7 @@ impl BlockchainSimulator {
                                     block_id: self.current_block[minter],
                                 },
                             };
-                            task_queue.push(prop_task);
+                            self.enqueue_task(prop_task);
                         }
                     }
 
@@ -328,34 +339,31 @@ impl BlockchainSimulator {
                         self.blocks[block_id].height
                     );
 
-                    // 受け取ったマイナーは自分のマイニングタスクをリスケジュールする
-
-                    // TODO: 自分のマイニングタスクの削除
-                    /*
-                    let new_difficulty = self.calculate_new_difficulty(&self.blocks[block_id]);
-                    self.schedule_next_mining_task(
-                        &mut task_queue,
-                        to,
-                        self.current_time,
-                        new_difficulty,
-                    );
-                    */
-
+                    // 伝播されたブロックによってメインチェーンを更新
                     let current_block_id = self.current_block[to];
                     self.choose_mainchain(block_id, current_block_id, from, to);
+
+                    // 受け取ったノードは次のマイニングタスクをキャンセルし、新しい難易度でスケジュールし直す
+                    self.cancel_next_mining_task(to);
+                    let new_difficulty = self.calculate_new_difficulty(&self.blocks[block_id]);
+                    self.schedule_next_mining_task(to, self.current_time, new_difficulty);
                 }
             }
         }
     }
 
+    fn cancel_next_mining_task(&mut self, node: usize) {
+        if let Some(next_time) = self.next_mining_time[node] {
+            self.next_mining_time[node] = None; // キャンセル
+            // タスクキューから削除
+            self.task_queue.retain(|task, _| {
+                !(task.ty == TaskType::BlockGeneration { minter: node } && task.time == next_time)
+            });
+        }
+    }
+
     /// time_baseにマイニング時間を加算したものが次のマイニング時刻となる
-    fn schedule_next_mining_task(
-        &mut self,
-        task_queue: &mut BinaryHeap<Task>,
-        node: usize,
-        time_base: i64,
-        new_difficulty: f64,
-    ) {
+    fn schedule_next_mining_task(&mut self, node: usize, time_base: i64, new_difficulty: f64) {
         let exp_dist = Exp::new(1.0).unwrap();
         let next_time = time_base
             + (exp_dist.sample(&mut self.rng) * self.generation_time as f64 * new_difficulty
@@ -367,7 +375,7 @@ impl BlockchainSimulator {
         };
         self.next_mining_time[node] = Some(next_time);
 
-        task_queue.push(task);
+        self.enqueue_task(task);
     }
 
     fn reset(&mut self) {
@@ -428,7 +436,7 @@ impl BlockchainSimulator {
             } else {
                 current_difficulty / ratio
             };
-            log::warn!(
+            log::trace!(
                 "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
                 new_height,
                 average_generation_time,
