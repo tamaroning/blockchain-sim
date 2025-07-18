@@ -7,9 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
 
-def run_cargo_command(
-    delta, num_nodes=100, generation_time=600000, end_round=80000, protocol="ethereum"
-):
+def run_cargo_command(delta, num_nodes, generation_time, end_round, protocol):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
 
@@ -112,8 +110,8 @@ def main():
     parser.add_argument(
         "--generation-time",
         type=int,
-        default=600000,
-        help="generation-time値 (デフォルト: 600000)",
+        default=15000000,
+        help="generation-time値 (デフォルト: 15000000)",
     )
 
     parser.add_argument(

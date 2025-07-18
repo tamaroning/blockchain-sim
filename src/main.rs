@@ -463,7 +463,7 @@ impl BlockchainSimulator {
             } else {
                 current_difficulty / ratio
             };
-            log::trace!(
+            log::info!(
                 "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
                 new_height,
                 average_generation_time,
@@ -486,13 +486,10 @@ impl BlockchainSimulator {
         let parent_block_id = current_block.prev_block_id.unwrap();
         let parent_block = &self.blocks[parent_block_id];
 
-        // (1 - (time_diff / 10)).max(-99)
-        let difficulty_adjustment = parent_block.difficulty / 2048.0
-            * (1.0
-                - ((current_block.time - parent_block.time) as f64
-                    / (self.generation_time as f64 * 0.66666)))
-                // 大幅な難易度低下を防止
-                .max(-0.5);
+        let time_diff = (current_block.time - parent_block.time) / 1000_000; // us to s
+        let adjustment_factor = (1 - (time_diff / 10)).max(-99);
+        let difficulty_adjustment = parent_block.difficulty / 2048. * adjustment_factor as f64;
+
         /*
         let mut has_uncle_block = false;
         let min_id = 0.max(parent_block_id as i64 - 100) as usize;
