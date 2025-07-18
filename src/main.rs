@@ -1,8 +1,10 @@
 use clap::{Parser, ValueEnum};
 use rand::prelude::*;
 use rand_distr::Exp;
+use serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 
 #[derive(Clone, Debug)]
@@ -64,6 +66,12 @@ enum TieBreakingRule {
     Time,
 }
 
+#[derive(Serialize)]
+struct Record {
+    round: u32,
+    difficulty: f64,
+}
+
 struct BlockchainSimulator {
     current_round: i64,
     current_time: i64,
@@ -78,6 +86,8 @@ struct BlockchainSimulator {
     num_nodes: usize,
     blocks: Vec<Block>, // 全ブロックを保存
     rng: StdRng,
+    /// CSV出力用のライター
+    csv: Option<csv::Writer<std::fs::File>>,
 }
 
 impl BlockchainSimulator {
@@ -88,6 +98,7 @@ impl BlockchainSimulator {
         tie: TieBreakingRule,
         delay: i64,
         generation_time: i64,
+        csv: Option<csv::Writer<std::fs::File>>,
     ) -> Self {
         let mut hashrate = vec![1; num_nodes];
         if num_nodes > 0 {
@@ -112,6 +123,7 @@ impl BlockchainSimulator {
             num_nodes,
             blocks: Vec::new(),
             rng: StdRng::seed_from_u64(seed),
+            csv,
         };
 
         // ジェネシスブロック作成
@@ -204,6 +216,7 @@ impl BlockchainSimulator {
     }
     */
 
+    /// シミュレーションを実行
     fn simulation(&mut self) {
         let mut task_queue = BinaryHeap::new();
 
@@ -278,6 +291,13 @@ impl BlockchainSimulator {
                             current_difficulty,
                             d
                         );
+                        if let Some(csv) = &mut self.csv {
+                            csv.serialize(&Record {
+                                round: new_height as u32,
+                                difficulty: d,
+                            })
+                            .expect("Failed to write CSV record");
+                        }
                         d
                     } else {
                         current_difficulty
@@ -420,10 +440,7 @@ impl BlockchainSimulator {
 
         // delta = 遅延 / 生成時間
         let delta = self.delay as f64 / self.generation_time as f64;
-        log::info!(
-            "- Delta (delay/generation_time): {:.2}",
-            delta
-        );
+        log::info!("- Delta (delay/generation_time): {:.2}", delta);
     }
 }
 
@@ -447,6 +464,10 @@ struct Cli {
 
     #[clap(long, default_value = "600000")]
     generation_time: i64, // ブロック生成時間
+
+    /// CSV出力ファイルパス
+    #[clap(long, short)]
+    output: Option<PathBuf>,
 }
 
 fn main() {
@@ -456,8 +477,11 @@ fn main() {
     if args.seed.is_none() {
         args.seed = Some(rand::thread_rng().r#gen::<u64>());
     }
-
     log::info!("args: {:?}", args);
+
+    let output = args
+        .output
+        .map(|path| csv::Writer::from_path(path).expect("Failed to create CSV writer"));
 
     let mut simulator = BlockchainSimulator::new(
         args.num_nodes,
@@ -466,6 +490,7 @@ fn main() {
         args.tie,
         args.delay,
         args.generation_time,
+        output,
     );
 
     simulator.print_hashrates();
