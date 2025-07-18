@@ -218,9 +218,7 @@ impl BlockchainSimulator {
 
             let task = Task {
                 time,
-                ty: TaskType::BlockGeneration {
-                    minter: i,
-                },
+                ty: TaskType::BlockGeneration { minter: i },
             };
 
             self.next_mining_time[i] = Some(time);
@@ -249,8 +247,7 @@ impl BlockchainSimulator {
 
                     let new_height = self.blocks[current_block_id].height + 1;
 
-                    let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000
-                    {
+                    let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000 {
                         let (first_block_in_epoch, height) = {
                             let mut block_id = current_block_id;
                             for _ in 0..2000 {
@@ -299,38 +296,34 @@ impl BlockchainSimulator {
 
                     self.blocks.push(new_block.clone());
                     self.current_block[minter] = new_block.id;
-
-                    let exp_dist = Exp::new(1.0).unwrap();
-                    let next_time = self.current_time
-                        + (exp_dist.sample(&mut self.rng)
-                            * self.generation_time as f64
-                            * new_difficulty
-                            / (self.hashrate[minter] as f64 / self.total_hashrate as f64))
-                            as i64;
-
-                    let next_task = Task {
-                        time: next_time,
-                        ty: TaskType::BlockGeneration { minter },
-                    };
-
-                    self.next_mining_time[minter] = Some(next_time);
-                    task_queue.push(next_task);
-
-                    // 伝播タスクを作成
-                    for i in 0..self.num_nodes {
-                        let prop_task = Task {
-                            time: self.current_time + self.propagation_time(minter, i),
-                            ty: TaskType::Propagation {
-                                from: minter,
-                                to: i,
-                                block_id: new_block.id,
-                            },
-                        };
-                        task_queue.push(prop_task);
-                    }
-
                     if self.current_round < new_block.height {
                         self.current_round = new_block.height;
+                    }
+
+                    // 次のマイニングタスクをスケジュール
+                    let Some(next_time) = self.next_mining_time[minter] else {
+                        unreachable!("next_mining_time should be set for all nodes");
+                    };
+                    self.schedule_next_mining_task(
+                        &mut task_queue,
+                        minter,
+                        next_time,
+                        new_difficulty,
+                    );
+
+                    // 伝播タスクをスケジュール
+                    for i in 0..self.num_nodes {
+                        if i != minter {
+                            let prop_task = Task {
+                                time: next_time + self.propagation_time(minter, i),
+                                ty: TaskType::Propagation {
+                                    from: minter,
+                                    to: i,
+                                    block_id: self.current_block[minter],
+                                },
+                            };
+                            task_queue.push(prop_task);
+                        }
                     }
 
                     log::debug!(
@@ -356,6 +349,28 @@ impl BlockchainSimulator {
                 }
             }
         }
+    }
+
+    /// time_baseにマイニング時間を加算したものが次のマイニング時刻となる
+    fn schedule_next_mining_task(
+        &mut self,
+        task_queue: &mut BinaryHeap<Task>,
+        node: usize,
+        time_base: i64,
+        new_difficulty: f64,
+    ) {
+        let exp_dist = Exp::new(1.0).unwrap();
+        let next_time = time_base
+            + (exp_dist.sample(&mut self.rng) * self.generation_time as f64 * new_difficulty
+                / (self.hashrate[node] as f64 / self.total_hashrate as f64)) as i64;
+
+        let task = Task {
+            time: next_time,
+            ty: TaskType::BlockGeneration { minter: node },
+        };
+        self.next_mining_time[node] = Some(next_time);
+
+        task_queue.push(task);
     }
 
     fn reset(&mut self) {
@@ -401,6 +416,13 @@ impl BlockchainSimulator {
         log::info!(
             "- Avg. time/block: {}",
             self.current_time as f64 / main_chain_length as f64
+        );
+
+        // delta = 遅延 / 生成時間
+        let delta = self.delay as f64 / self.generation_time as f64;
+        log::info!(
+            "- Delta (delay/generation_time): {:.2}",
+            delta
         );
     }
 }
@@ -448,6 +470,6 @@ fn main() {
 
     simulator.print_hashrates();
     simulator.simulation();
-    simulator.print_blockchain();
+    //simulator.print_blockchain();
     simulator.print_summary();
 }
