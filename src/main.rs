@@ -218,14 +218,6 @@ impl BlockchainSimulator {
 
     /// シミュレーションを実行
     fn simulation(&mut self) {
-        if let Some(csv) = &mut self.csv {
-            csv.serialize(&Record {
-                round: 0,
-                difficulty: self.blocks[0].difficulty,
-            })
-            .expect("Failed to write CSV record");
-        }
-
         let mut task_queue = BinaryHeap::new();
 
         // 初期マイニングタスクをスケジュール
@@ -264,56 +256,20 @@ impl BlockchainSimulator {
                     // 新しいブロック作成
                     let current_block_id = self.current_block[minter];
                     let current_block = &self.blocks[current_block_id];
-                    let current_difficulty = current_block.difficulty;
 
-                    let new_height = self.blocks[current_block_id].height + 1;
-
-                    let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000 {
-                        let (first_block_in_epoch, height) = {
-                            let mut block_id = current_block_id;
-                            for _ in 0..2000 {
-                                if let Some(prev_id) = self.blocks[block_id].prev_block_id {
-                                    block_id = prev_id;
-                                } else {
-                                    break;
-                                }
-                            }
-                            (block_id, self.blocks[block_id].height)
-                        };
-                        let average_generation_time =
-                            (self.current_time - self.blocks[first_block_in_epoch].time) as f64
-                                / (current_block.height - height) as f64;
-                        let ratio = average_generation_time / self.generation_time as f64;
-                        let d = if ratio < 0.5 {
-                            current_difficulty * 0.25
-                        } else if ratio > 2.0 {
-                            current_difficulty * 4.
-                        } else {
-                            current_difficulty / ratio
-                        };
-                        log::warn!(
-                            "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
-                            new_height,
-                            average_generation_time,
-                            ratio,
-                            current_difficulty,
-                            d
-                        );
-                        if let Some(csv) = &mut self.csv {
-                            csv.serialize(&Record {
-                                round: new_height as u32,
-                                difficulty: d,
-                            })
-                            .expect("Failed to write CSV record");
-                        }
-                        d
-                    } else {
-                        current_difficulty
-                    };
+                    // 難易度調整
+                    let new_difficulty = self.calculate_new_difficulty(current_block);
+                    if let Some(csv) = &mut self.csv {
+                        csv.serialize(&Record {
+                            round: current_block.height as u32,
+                            difficulty: new_difficulty,
+                        })
+                        .expect("Failed to write CSV record");
+                    }
 
                     static BLOCK_ID: AtomicUsize = AtomicUsize::new(1);
                     let new_block = Block {
-                        height: self.blocks[current_block_id].height + 1,
+                        height: current_block.height + 1,
                         prev_block_id: Some(current_block_id),
                         minter: minter as i32,
                         time: self.current_time,
@@ -372,6 +328,19 @@ impl BlockchainSimulator {
                         self.blocks[block_id].height
                     );
 
+                    // 受け取ったマイナーは自分のマイニングタスクをリスケジュールする
+
+                    // TODO: 自分のマイニングタスクの削除
+                    /*
+                    let new_difficulty = self.calculate_new_difficulty(&self.blocks[block_id]);
+                    self.schedule_next_mining_task(
+                        &mut task_queue,
+                        to,
+                        self.current_time,
+                        new_difficulty,
+                    );
+                    */
+
                     let current_block_id = self.current_block[to];
                     self.choose_mainchain(block_id, current_block_id, from, to);
                 }
@@ -427,6 +396,52 @@ impl BlockchainSimulator {
                 block.rand
             );
         }
+    }
+
+    fn calculate_new_difficulty(&self, current_block: &Block) -> f64 {
+        let current_block_id = current_block.id;
+        let current_difficulty = current_block.difficulty;
+        let current_height = current_block.height;
+
+        let new_height = current_height + 1;
+
+        let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000 {
+            let (first_block_in_epoch, height) = {
+                let mut block_id = current_block_id;
+                for _ in 0..2000 {
+                    if let Some(prev_id) = self.blocks[block_id].prev_block_id {
+                        block_id = prev_id;
+                    } else {
+                        break;
+                    }
+                }
+                (block_id, self.blocks[block_id].height)
+            };
+            let average_generation_time =
+                (self.current_time - self.blocks[first_block_in_epoch].time) as f64
+                    / (current_block.height - height) as f64;
+            let ratio = average_generation_time / self.generation_time as f64;
+            let d = if ratio < 0.5 {
+                current_difficulty * 0.25
+            } else if ratio > 2.0 {
+                current_difficulty * 4.
+            } else {
+                current_difficulty / ratio
+            };
+            log::warn!(
+                "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
+                new_height,
+                average_generation_time,
+                ratio,
+                current_difficulty,
+                d
+            );
+            d
+        } else {
+            current_difficulty
+        };
+
+        new_difficulty
     }
 
     fn print_summary(&self) {
