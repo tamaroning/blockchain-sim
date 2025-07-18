@@ -501,7 +501,9 @@ impl BlockchainSimulator {
             // uncle_blockがあるか+-100のblock_idを探す
             for i in min_id..=max_id {
                 if let Some(maybe_uncle) = self.blocks.get(i) {
-                    if maybe_uncle.prev_block_id == Some(grandparent_block_id) {
+                    if maybe_uncle.prev_block_id == Some(grandparent_block_id)
+                        && maybe_uncle.id != parent_block_id
+                    {
                         has_uncle_block = true;
                         break;
                     }
