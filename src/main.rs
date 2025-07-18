@@ -365,7 +365,7 @@ impl BlockchainSimulator {
 
                     // 受け取ったノードは次のマイニングタスクをキャンセルし、新しい難易度でスケジュールし直す
                     self.cancel_next_mining_task(to);
-                    let new_difficulty = self.calculate_new_difficulty_btc(&self.blocks[block_id]);
+                    let new_difficulty = self.calculate_new_difficulty(&self.blocks[block_id]);
                     self.schedule_next_mining_task(to, self.current_time, new_difficulty);
                 }
             }
