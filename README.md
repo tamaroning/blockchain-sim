@@ -8,7 +8,10 @@ RUST_LOG="debug" cargo run
 ```bash
 cargo build --release
 cd experiment
-uv run main.py
+
+# 実行
+uv run main.py --protocol=ethereum
+uv run main.py --protocol=bitcoin
 
 # 難易度のプロット
 uv run plot-difficulty.py --protocol=ethereum
