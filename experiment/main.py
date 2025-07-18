@@ -2,7 +2,7 @@
 import subprocess
 import sys
 
-def run_cargo_command(delta, generation_time=600000, end_round=200000):
+def run_cargo_command(delta, generation_time=600000, end_round=20000):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
 
@@ -22,6 +22,7 @@ def run_cargo_command(delta, generation_time=600000, end_round=200000):
         f"--end-round={end_round}",
         f"--delay={delay}",
         f"--generation-time={generation_time}",
+        f"--protocol=ethereum",
         f"--output={output_file}",
     ]
 
@@ -36,15 +37,15 @@ def run_cargo_command(delta, generation_time=600000, end_round=200000):
         result = subprocess.run(cmd, env=env, capture_output=True, text=True)
 
         if result.returncode == 0:
-            print(f"✓ delta={delta} の実行が完了しました")
+            print(f"✓ Δ/T={delta} の実行が完了しました")
             if result.stdout:
                 print(f"出力: {result.stdout}")
         else:
-            print(f"✗ delta={delta} の実行でエラーが発生しました")
+            print(f"✗ Δ/T={delta} の実行でエラーが発生しました")
             print(f"エラー: {result.stderr}")
 
     except Exception as e:
-        print(f"✗ delta={delta} の実行中に例外が発生しました: {e}")
+        print(f"✗ Δ/T={delta} の実行中に例外が発生しました: {e}")
 
     print("-" * 50)
 

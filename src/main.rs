@@ -72,6 +72,13 @@ struct Record {
     difficulty: f64,
 }
 
+#[derive(ValueEnum, Debug, Clone, Default, PartialEq)]
+enum Protocol {
+    #[default]
+    Bitcoin,
+    Ethereum,
+}
+
 struct BlockchainSimulator {
     current_round: i64,
     current_time: i64,
@@ -86,6 +93,7 @@ struct BlockchainSimulator {
     num_nodes: usize,
     blocks: Vec<Block>, // 全ブロックを保存
     rng: StdRng,
+    protocol: Protocol,
     /// CSV出力用のライター
     csv: Option<csv::Writer<std::fs::File>>,
 
@@ -101,6 +109,7 @@ impl BlockchainSimulator {
         tie: TieBreakingRule,
         delay: i64,
         generation_time: i64,
+        protocol: Protocol,
         csv: Option<csv::Writer<std::fs::File>>,
     ) -> Self {
         let mut hashrate = vec![1; num_nodes];
@@ -128,6 +137,7 @@ impl BlockchainSimulator {
             num_nodes,
             blocks: Vec::new(),
             rng: StdRng::seed_from_u64(seed),
+            protocol,
             csv,
             task_queue,
         };
@@ -345,7 +355,7 @@ impl BlockchainSimulator {
 
                     // 受け取ったノードは次のマイニングタスクをキャンセルし、新しい難易度でスケジュールし直す
                     self.cancel_next_mining_task(to);
-                    let new_difficulty = self.calculate_new_difficulty(&self.blocks[block_id]);
+                    let new_difficulty = self.calculate_new_difficulty_btc(&self.blocks[block_id]);
                     self.schedule_next_mining_task(to, self.current_time, new_difficulty);
                 }
             }
@@ -407,6 +417,13 @@ impl BlockchainSimulator {
     }
 
     fn calculate_new_difficulty(&self, current_block: &Block) -> f64 {
+        match self.protocol {
+            Protocol::Bitcoin => self.calculate_new_difficulty_btc(current_block),
+            Protocol::Ethereum => self.calculate_new_difficulty_eth(current_block),
+        }
+    }
+
+    fn calculate_new_difficulty_btc(&self, current_block: &Block) -> f64 {
         let current_block_id = current_block.id;
         let current_difficulty = current_block.difficulty;
         let current_height = current_block.height;
@@ -449,6 +466,55 @@ impl BlockchainSimulator {
             current_difficulty
         };
 
+        new_difficulty
+    }
+
+    fn calculate_new_difficulty_eth(&self, current_block: &Block) -> f64 {
+        if current_block.height == 0 {
+            return 1.0; // ジェネシスブロックの難易度は1.0
+        }
+        let parent_block_id = current_block.prev_block_id.unwrap();
+        let parent_block = &self.blocks[parent_block_id];
+
+        let mut difficulty_adjustment =
+            // FIXME: 本当は//で割るべきだが、難易度が1以下なので/で代用している
+            if current_block.time - parent_block.time < self.generation_time {
+                parent_block.difficulty / 2048_f64
+            } else {
+                -(parent_block.difficulty / 2048_f64)
+            };
+
+        let mut has_uncle_block = false;
+        if let Some(grandparent_block_id) = parent_block.prev_block_id {
+            let min_id = 0.max(parent_block_id as i64 - 100) as usize;
+            let max_id = parent_block_id + 100;
+            // uncle_blockがあるか+-100のblock_idを探す
+            for i in min_id..=max_id {
+                if let Some(maybe_uncle) = self.blocks.get(i) {
+                    if maybe_uncle.prev_block_id == Some(grandparent_block_id) {
+                        has_uncle_block = true;
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if has_uncle_block {
+            difficulty_adjustment *= 2.;
+        }
+        // TODO: とりあえずPoSのボムは無視
+        /*
+        let bomb_delay_adjustment = if current_block.height >= 100_000 {
+            2_f64.powf((current_block.height as f64 / 100_000.0) - 2.0)
+        } else {
+            0.0
+        };*/
+        let bomb_delay_adjustment = 0.;
+
+        let new_difficulty =
+            parent_block.difficulty + difficulty_adjustment + bomb_delay_adjustment;
         new_difficulty
     }
 
@@ -496,6 +562,9 @@ struct Cli {
     #[clap(long, default_value = "600000")]
     generation_time: i64, // ブロック生成時間
 
+    #[clap(long, value_enum, default_value_t = Protocol::Bitcoin)]
+    protocol: Protocol,
+
     /// CSV出力ファイルパス
     #[clap(long, short)]
     output: Option<PathBuf>,
@@ -521,6 +590,7 @@ fn main() {
         args.tie,
         args.delay,
         args.generation_time,
+        args.protocol,
         output,
     );
 
