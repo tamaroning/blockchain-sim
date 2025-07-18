@@ -2,7 +2,7 @@
 import subprocess
 import sys
 
-def run_cargo_command(delta, generation_time=600000, end_round=1000000):
+def run_cargo_command(delta, generation_time=600000, end_round=200000):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
 

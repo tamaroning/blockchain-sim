@@ -218,6 +218,14 @@ impl BlockchainSimulator {
 
     /// シミュレーションを実行
     fn simulation(&mut self) {
+        if let Some(csv) = &mut self.csv {
+            csv.serialize(&Record {
+                round: 0,
+                difficulty: self.blocks[0].difficulty,
+            })
+            .expect("Failed to write CSV record");
+        }
+
         let mut task_queue = BinaryHeap::new();
 
         // 初期マイニングタスクをスケジュール
