@@ -486,36 +486,42 @@ impl BlockchainSimulator {
         let parent_block_id = current_block.prev_block_id.unwrap();
         let parent_block = &self.blocks[parent_block_id];
 
-        let mut difficulty_adjustment =
-            // FIXME: 本当は//で割るべきだが、難易度が1以下なので/で代用している
-            if current_block.time - parent_block.time < self.generation_time {
-                parent_block.difficulty / 2048_f64
-            } else {
-                -(parent_block.difficulty / 2048_f64)
-            };
-
+        // (1 - (time_diff / 10)).max(-99)
+        let difficulty_adjustment = parent_block.difficulty / 2048.0
+            * (1.0
+                - ((current_block.time - parent_block.time) as f64
+                    / (self.generation_time as f64 * 0.66666)))
+                // 大幅な難易度低下を防止
+                .max(-0.5);
+        /*
         let mut has_uncle_block = false;
-        if let Some(grandparent_block_id) = parent_block.prev_block_id {
-            let min_id = 0.max(parent_block_id as i64 - 100) as usize;
-            let max_id = parent_block_id + 100;
-            // uncle_blockがあるか+-100のblock_idを探す
-            for i in min_id..=max_id {
-                if let Some(maybe_uncle) = self.blocks.get(i) {
-                    if maybe_uncle.prev_block_id == Some(grandparent_block_id)
-                        && maybe_uncle.id != parent_block_id
-                    {
-                        has_uncle_block = true;
-                        break;
-                    }
-                } else {
+        let min_id = 0.max(parent_block_id as i64 - 100) as usize;
+        let max_id = parent_block_id + 100;
+        // uncle_blockがあるか+-100のblock_idを探す
+        for i in min_id..=max_id {
+            if let Some(maybe_uncle) = self.blocks.get(i) {
+                if maybe_uncle.height == parent_block.height
+                    && maybe_uncle.id != parent_block_id
+                    && maybe_uncle.prev_block_id.is_some()
+                    && maybe_uncle.prev_block_id == parent_block.prev_block_id
+                {
+                    has_uncle_block = true;
                     break;
                 }
+            } else {
+                break;
             }
         }
 
-        if has_uncle_block {
-            difficulty_adjustment += parent_block.difficulty / 2048_f64;
-        }
+        let uncle_adjustment = if has_uncle_block {
+            parent_block.difficulty / 2048_f64
+        } else {
+            0.
+        };
+        */
+        // TODO: uncle調整は無視
+        let uncle_adjustment = 0.;
+
         // TODO: とりあえずPoSのボムは無視
         /*
         let bomb_delay_adjustment = if current_block.height >= 100_000 {
@@ -525,8 +531,10 @@ impl BlockchainSimulator {
         };*/
         let bomb_delay_adjustment = 0.;
 
-        let new_difficulty =
-            parent_block.difficulty + difficulty_adjustment + bomb_delay_adjustment;
+        let new_difficulty = parent_block.difficulty
+            + difficulty_adjustment
+            + uncle_adjustment
+            + bomb_delay_adjustment;
         new_difficulty
     }
 
