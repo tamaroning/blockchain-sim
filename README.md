@@ -21,3 +21,9 @@ uv run plot-difficulty.py --protocol=bitcoin
 uv run plot-time.py data/bitcoin-0.1.csv
 uv run plot-time.py data/ethereum-0.1.csv
 ```
+
+<!--
+uv run main.py --protocol=ethereum
+uv run plot-difficulty.py --protocol=ethereum
+uv run plot-time.py data/ethereum-0.1.csv
+-->

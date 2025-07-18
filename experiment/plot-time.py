@@ -12,8 +12,8 @@ def main():
         "--window",
         "-w",
         type=int,
-        default=4000,
-        help="Moving average window size (default: 4000)",
+        default=1000,
+        help="Moving average window size (default: 1000)",
     )
     parser.add_argument(
         "--log-scale",
@@ -91,6 +91,7 @@ def main():
         df["round"], df["difficulty"], color=color2, linewidth=2, label="Difficulty"
     )
     ax2.tick_params(axis="y", labelcolor=color2)
+    ax2.set_ylim(bottom=0.0)
 
     # Title and grid
     plt.title("Blockchain Mining Time and Difficulty Over Time")
