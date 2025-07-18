@@ -426,23 +426,23 @@ impl BlockchainSimulator {
         }
     }
 
-    fn calculate_new_difficulty(&self, current_block: &Block) -> f64 {
+    fn calculate_new_difficulty(&self, parent_block: &Block) -> f64 {
         match self.protocol {
-            Protocol::Bitcoin => self.calculate_new_difficulty_btc(current_block),
-            Protocol::Ethereum => self.calculate_new_difficulty_eth(current_block),
+            Protocol::Bitcoin => self.calculate_new_difficulty_btc(parent_block),
+            Protocol::Ethereum => self.calculate_new_difficulty_eth(parent_block),
         }
     }
 
-    fn calculate_new_difficulty_btc(&self, current_block: &Block) -> f64 {
-        let current_block_id = current_block.id;
-        let current_difficulty = current_block.difficulty;
-        let current_height = current_block.height;
+    fn calculate_new_difficulty_btc(&self, parent_block: &Block) -> f64 {
+        let parent_block_id = parent_block.id;
+        let parent_difficulty = parent_block.difficulty;
+        let parent_height = parent_block.height;
 
-        let new_height = current_height + 1;
+        let new_height = parent_height + 1;
 
         let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000 {
             let (first_block_in_epoch, height) = {
-                let mut block_id = current_block_id;
+                let mut block_id = parent_block_id;
                 for _ in 0..2000 {
                     if let Some(prev_id) = self.blocks[block_id].prev_block_id {
                         block_id = prev_id;
@@ -454,39 +454,39 @@ impl BlockchainSimulator {
             };
             let average_generation_time =
                 (self.current_time - self.blocks[first_block_in_epoch].time) as f64
-                    / (current_block.height - height) as f64;
+                    / (parent_height - height) as f64;
             let ratio = average_generation_time / self.generation_time as f64;
             let d = if ratio < 0.5 {
-                current_difficulty * 0.25
+                parent_difficulty * 0.25
             } else if ratio > 2.0 {
-                current_difficulty * 4.
+                parent_difficulty * 4.
             } else {
-                current_difficulty / ratio
+                parent_difficulty / ratio
             };
             log::info!(
                 "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
                 new_height,
                 average_generation_time,
                 ratio,
-                current_difficulty,
+                parent_difficulty,
                 d
             );
             d
         } else {
-            current_difficulty
+            parent_difficulty
         };
 
         new_difficulty
     }
 
-    fn calculate_new_difficulty_eth(&self, current_block: &Block) -> f64 {
-        if current_block.height == 0 {
-            return 1.0; // ジェネシスブロックの難易度は1.0
+    fn calculate_new_difficulty_eth(&self, parent_block: &Block) -> f64 {
+        if parent_block.height == 0 {
+            return 1.0;
         }
-        let parent_block_id = current_block.prev_block_id.unwrap();
-        let parent_block = &self.blocks[parent_block_id];
+        let grand_parent_block_id = parent_block.prev_block_id.unwrap();
+        let grand_parent_block = &self.blocks[grand_parent_block_id];
 
-        let time_diff = (current_block.time - parent_block.time) / 1000_000; // us to s
+        let time_diff = (parent_block.time - grand_parent_block.time) / 1000_000; // us to s
         let adjustment_factor = (1 - (time_diff / 10)).max(-99);
         let difficulty_adjustment = parent_block.difficulty / 2048. * adjustment_factor as f64;
 
@@ -532,6 +532,24 @@ impl BlockchainSimulator {
             + difficulty_adjustment
             + uncle_adjustment
             + bomb_delay_adjustment;
+        if new_difficulty - parent_block.difficulty > 1. {
+            //  エラー
+            log::error!(
+                "Difficulty adjustment error:
+                height: {},
+                parent_difficulty: {:.2},
+                new_difficulty: {:.2},
+                difficulty_adjustment: {:.2},
+                uncle_adjustment: {:.2},
+                bomb_delay_adjustment: {:.2}",
+                parent_block.height + 1,
+                parent_block.difficulty,
+                new_difficulty,
+                difficulty_adjustment,
+                uncle_adjustment,
+                bomb_delay_adjustment
+            );
+        }
         new_difficulty
     }
 
