@@ -1,7 +1,6 @@
 use clap::{Parser, ValueEnum};
 use rand::prelude::*;
 use rand_distr::Exp;
-use rand_distr::num_traits::Pow;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::atomic::AtomicUsize;
