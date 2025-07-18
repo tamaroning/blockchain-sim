@@ -512,7 +512,7 @@ impl BlockchainSimulator {
         }
 
         if has_uncle_block {
-            difficulty_adjustment *= 2.;
+            difficulty_adjustment += parent_block.difficulty / 2048_f64;
         }
         // TODO: とりあえずPoSのボムは無視
         /*
