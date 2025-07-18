@@ -2,7 +2,10 @@
 import subprocess
 import sys
 
-def run_cargo_command(delta, generation_time=600000, end_round=20000):
+
+def run_cargo_command(
+    delta, generation_time=600000, end_round=80000, protocol="ethereum"
+):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
 
@@ -22,7 +25,7 @@ def run_cargo_command(delta, generation_time=600000, end_round=20000):
         f"--end-round={end_round}",
         f"--delay={delay}",
         f"--generation-time={generation_time}",
-        f"--protocol=ethereum",
+        f"--protocol={protocol}",
         f"--output={output_file}",
     ]
 
