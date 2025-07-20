@@ -7,6 +7,8 @@ use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 
+const BTC_DAA_EPOCH: i64 = 2016;
+
 #[derive(Clone, Debug)]
 struct Block {
     height: i64,
@@ -284,20 +286,21 @@ impl BlockchainSimulator {
 
                     let current_block_id = self.current_block[minter];
                     let current_block = &self.blocks[current_block_id];
-                    // 難易度調整
-                    let new_difficulty = self.calculate_new_difficulty(current_block);
 
                     // 次のマイニングタスクをスケジュール
                     let Some(next_time) = self.next_mining_time[minter] else {
                         unreachable!("next_mining_time should be set for all nodes");
                     };
-                    self.schedule_next_mining_task(minter, next_time, new_difficulty);
+                    // 本来は、現在のブロックの難易度を使わないといけないが、親の難易度を使って近似する
+                    self.schedule_next_mining_task(minter, next_time, current_block.difficulty);
                     let mining_time = self.next_mining_time[minter].unwrap() - self.current_time;
 
                     let current_block_id = self.current_block[minter];
                     let current_block = &self.blocks[self.current_block[minter]];
 
-                    //if current_block.height % 2000 == 0 {
+                    // 難易度調整
+                    let new_difficulty = self.calculate_new_difficulty(current_block);
+
                     if let Some(csv) = &mut self.csv {
                         csv.serialize(&Record {
                             round: current_block.height as u32,
@@ -306,7 +309,6 @@ impl BlockchainSimulator {
                         })
                         .expect("Failed to write CSV record");
                     }
-                    //}
 
                     static BLOCK_ID: AtomicUsize = AtomicUsize::new(1);
                     let new_block = Block {
@@ -440,10 +442,10 @@ impl BlockchainSimulator {
 
         let new_height = parent_height + 1;
 
-        let new_difficulty = if new_height % 2000 == 0 && new_height >= 2000 {
+        let new_difficulty = if new_height % BTC_DAA_EPOCH == 0 && new_height >= BTC_DAA_EPOCH {
             let (first_block_in_epoch, height) = {
                 let mut block_id = parent_block_id;
-                for _ in 0..2000 {
+                for _ in 0..BTC_DAA_EPOCH {
                     if let Some(prev_id) = self.blocks[block_id].prev_block_id {
                         block_id = prev_id;
                     } else {
@@ -519,19 +521,7 @@ impl BlockchainSimulator {
         // TODO: uncle調整は無視
         let uncle_adjustment = 0.;
 
-        // TODO: とりあえずPoSのボムは無視
-        /*
-        let bomb_delay_adjustment = if current_block.height >= 100_000 {
-            2_f64.powf((current_block.height as f64 / 100_000.0) - 2.0)
-        } else {
-            0.0
-        };*/
-        let bomb_delay_adjustment = 0.;
-
-        let new_difficulty = parent_block.difficulty
-            + difficulty_adjustment
-            + uncle_adjustment
-            + bomb_delay_adjustment;
+        let new_difficulty = parent_block.difficulty + difficulty_adjustment + uncle_adjustment;
         if new_difficulty - parent_block.difficulty > 1. {
             //  エラー
             log::error!(
@@ -540,14 +530,12 @@ impl BlockchainSimulator {
                 parent_difficulty: {:.2},
                 new_difficulty: {:.2},
                 difficulty_adjustment: {:.2},
-                uncle_adjustment: {:.2},
-                bomb_delay_adjustment: {:.2}",
+                uncle_adjustment: {:.2}",
                 parent_block.height + 1,
                 parent_block.difficulty,
                 new_difficulty,
                 difficulty_adjustment,
                 uncle_adjustment,
-                bomb_delay_adjustment
             );
         }
         new_difficulty
