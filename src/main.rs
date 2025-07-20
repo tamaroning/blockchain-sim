@@ -4,6 +4,7 @@ use rand::prelude::*;
 use rand_distr::Exp;
 use serde::Serialize;
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 
@@ -102,6 +103,7 @@ struct BlockchainSimulator {
     protocol: Protocol,
     /// CSV出力用のライター
     csv: Option<csv::Writer<std::fs::File>>,
+    csv_written_block_heights: HashSet<i64>,
 
     /// タスクキュー
     task_queue: PriorityQueue<Task, i64>,
@@ -118,10 +120,15 @@ impl BlockchainSimulator {
         protocol: Protocol,
         csv: Option<csv::Writer<std::fs::File>>,
     ) -> Self {
-        let mut hashrate = vec![1; num_nodes];
-        if num_nodes > 0 {
-            hashrate[0] = (num_nodes - 1) as i64;
+        let mut rng = StdRng::seed_from_u64(seed);
+        let exp_dist = Exp::new(1.0).unwrap();
+        let mut hashrate = vec![0; num_nodes];
+
+        // 指数分布でハッシュレートを生成
+        for i in 0..num_nodes {
+            hashrate[i] = (exp_dist.sample(&mut rng) * 10000.0) as i64 + 1; // 最低1は保証
         }
+        log::info!("Hashrates: {:?}", hashrate);
 
         let total_hashrate = hashrate.iter().sum();
 
@@ -142,9 +149,10 @@ impl BlockchainSimulator {
             //main_length: 0,
             num_nodes,
             blocks: Vec::new(),
-            rng: StdRng::seed_from_u64(seed),
+            rng,
             protocol,
             csv,
+            csv_written_block_heights: HashSet::with_capacity(end_round as usize * 4),
             task_queue,
         };
 
@@ -302,12 +310,18 @@ impl BlockchainSimulator {
                     let new_difficulty = self.calculate_new_difficulty(current_block);
 
                     if let Some(csv) = &mut self.csv {
-                        csv.serialize(&Record {
-                            round: current_block.height as u32,
-                            difficulty: new_difficulty,
-                            mining_time: current_block.mining_time,
-                        })
-                        .expect("Failed to write CSV record");
+                        if !self
+                            .csv_written_block_heights
+                            .contains(&current_block.height)
+                        {
+                            self.csv_written_block_heights.insert(current_block.height);
+                            csv.serialize(&Record {
+                                round: current_block.height as u32,
+                                difficulty: new_difficulty,
+                                mining_time: current_block.mining_time,
+                            })
+                            .expect("Failed to write CSV record");
+                        }
                     }
 
                     static BLOCK_ID: AtomicUsize = AtomicUsize::new(1);
@@ -389,7 +403,8 @@ impl BlockchainSimulator {
         let exp_dist = Exp::new(1.0).unwrap();
         let next_time = time_base
             + (exp_dist.sample(&mut self.rng) * self.generation_time as f64 * new_difficulty
-                / (self.hashrate[node] as f64 / self.total_hashrate as f64)) as i64;
+                / self.hashrate[node] as f64
+                * self.total_hashrate as f64) as i64;
 
         let task = Task {
             time: next_time,
