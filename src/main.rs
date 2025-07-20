@@ -299,7 +299,6 @@ impl BlockchainSimulator {
                     let Some(next_time) = self.next_mining_time[minter] else {
                         unreachable!("next_mining_time should be set for all nodes");
                     };
-                    // 本来は、現在のブロックの難易度を使わないといけないが、親の難易度を使って近似する
                     self.schedule_next_mining_task(minter, next_time, current_block.difficulty);
                     let mining_time = self.next_mining_time[minter].unwrap() - self.current_time;
 
