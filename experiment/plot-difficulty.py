@@ -144,6 +144,16 @@ def plot_specific_deltas(delta_values=None, output_file="plot.png", protocol="")
                 alpha=0.8,
             )
 
+            # 収束先の水平線を追加（exp(-delta)）
+            convergence_value = np.exp(-delta)
+            plt.axhline(
+                y=convergence_value,
+                color=colors[i],
+                linestyle='--',
+                alpha=0.4,
+                linewidth=1
+            )
+
             plotted_count += 1
             print(f"✓ {csv_file} をプロットしました (データ数={len(df)})")
 
