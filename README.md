@@ -7,8 +7,8 @@ Network topology:
 - Complete graph
 - Constant network delay
 
+Usage:
 
-k-lead selfish mining
 ```bash
 # Run Ethereum protocol with 100 nodes for 10,000 rounds
 RUST_LOG="info" cargo run --release -- --end-round 10000 --protocol ethereum --num-nodes 100
