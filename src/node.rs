@@ -65,6 +65,10 @@ impl Node {
         self.mining_strategy.as_ref()
     }
 
+    pub fn mining_strategy_mut(&mut self) -> &mut dyn MiningStrategy {
+        self.mining_strategy.as_mut()
+    }
+
     pub fn private_chain_tip(&self) -> Option<usize> {
         self.private_chain_tip
     }
