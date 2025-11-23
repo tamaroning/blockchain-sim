@@ -48,9 +48,9 @@ impl Protocol for BitcoinProtocol {
                 }
                 (block_id, blocks[block_id].height())
             };
-            let average_generation_time =
-                (current_time - blocks[first_block_in_epoch].time()) as f64
-                    / (parent_height - height) as f64;
+            let average_generation_time = (current_time - blocks[first_block_in_epoch].time())
+                as f64
+                / (parent_height - height) as f64;
             let ratio = average_generation_time / generation_time as f64;
             let d = if ratio < 0.5 {
                 parent_difficulty * 0.25
@@ -59,14 +59,6 @@ impl Protocol for BitcoinProtocol {
             } else {
                 parent_difficulty / ratio
             };
-            log::info!(
-                "Difficulty adjustment: height: {}, avg. block/time: {:.2} ratio: {:.2}, {:.2}=>{:.2}",
-                new_height,
-                average_generation_time,
-                ratio,
-                parent_difficulty,
-                d
-            );
             d
         } else {
             parent_difficulty
@@ -137,4 +129,3 @@ impl ProtocolType {
         }
     }
 }
-

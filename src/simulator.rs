@@ -320,7 +320,7 @@ impl BlockchainSimulator {
                         self.current_round = new_block.height();
                     }
 
-                    log::debug!(
+                    log::trace!(
                         "📦 time: {}, minter: {}, difficulty: {}, height: {}",
                         self.current_time,
                         new_block.minter(),
@@ -330,7 +330,7 @@ impl BlockchainSimulator {
                 }
 
                 TaskType::Propagation { from, to, block_id } => {
-                    log::debug!(
+                    log::trace!(
                         "🚚 time: {}, {}->{}, height: {}",
                         self.current_time,
                         from,
@@ -353,29 +353,43 @@ impl BlockchainSimulator {
                         (height, difficulty)
                     };
 
-                    // k-lead selfish mining: 公開チェーンが更新された場合、プライベートチェーンを無効化
+                    // k-lead selfish mining: 公開チェーンが更新された場合、リードが0になったらプライベートチェーンを公開
                     if new_height > old_height {
-                        // 公開チェーンが更新されたので、プライベートチェーンをクリア
-                        self.nodes[*to].set_private_chain_tip(None);
+                        // プライベートチェーンを持っているかチェック
+                        if let Some(private_tip_id) = self.nodes[*to].private_chain_tip() {
+                            let private_tip_block =
+                                self.blockchain.get_block(private_tip_id).unwrap();
+                            let private_chain_height = private_tip_block.height();
+
+                            // リードが0になったら（プライベートチェーンと公開チェーンの高さが同じになったら）公開
+                            if private_chain_height == new_height {
+                                // リードが0になったので、プライベートチェーンを公開
+                                log::debug!(
+                                    "k-lead selfish mining: publish private chain since lead is reduced to 0"
+                                );
+                                self.publish_private_chain(*to, private_tip_id, self.current_time);
+                                // プライベートチェーンをクリアし、公開チェーンに切り替え
+                                self.nodes[*to].set_current_block_id(private_tip_id);
+                                self.nodes[*to].set_private_chain_tip(None);
+                            } else if new_height > private_chain_height {
+                                // 公開チェーンがプライベートチェーンを追い越した場合、プライベートチェーンを無効化
+                                self.nodes[*to].set_private_chain_tip(None);
+                            }
+                        }
                     }
 
                     // 受け取ったノードは次のマイニングタスクをキャンセルし、新しい難易度でスケジュールし直す
-                    self.cancel_next_mining_task(*to);
+                    self.cancel_incoming_mining_task(*to);
                     self.schedule_next_mining_task(*to, self.current_time, new_difficulty);
                 }
             }
         }
     }
 
-    fn cancel_next_mining_task(&mut self, node: usize) {
-        if let Some(next_time) = self.nodes[node].next_mining_time() {
-            self.nodes[node].set_next_mining_time(None); // キャンセル
-            // タスクキューから削除
-            self.task_queue.retain(|task, _| {
-                !(task.task_type() == &TaskType::BlockGeneration { minter: node }
-                    && task.time() == next_time)
-            });
-        }
+    fn cancel_incoming_mining_task(&mut self, node: usize) {
+        self.nodes[node].set_next_mining_time(None);
+        self.task_queue
+            .retain(|task, _| !(task.task_type() == &TaskType::BlockGeneration { minter: node }));
     }
 
     /// プライベートチェーンのすべてのブロックを公開する

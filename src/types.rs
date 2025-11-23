@@ -61,11 +61,7 @@ pub trait MiningStrategy: Send + Sync {
     /// `private_chain_height`: プライベートチェーンの高さ
     /// `public_chain_height`: 公開チェーンの高さ
     /// 返り値: 公開すべきかどうか
-    fn should_publish_block(
-        &self,
-        _private_chain_height: i64,
-        _public_chain_height: i64,
-    ) -> bool {
+    fn should_publish_block(&self, _private_chain_height: i64, _public_chain_height: i64) -> bool {
         // デフォルト実装：常に公開する
         true
     }
@@ -171,11 +167,7 @@ impl MiningStrategy for KLeadSelfishMiningStrategy {
         "KLeadSelfishMining"
     }
 
-    fn should_publish_block(
-        &self,
-        private_chain_height: i64,
-        public_chain_height: i64,
-    ) -> bool {
+    fn should_publish_block(&self, private_chain_height: i64, public_chain_height: i64) -> bool {
         // プライベートチェーンの高さが公開チェーンよりkブロック以上大きい場合のみ公開
         private_chain_height >= public_chain_height + self.k
     }
@@ -186,15 +178,9 @@ impl MiningStrategy for KLeadSelfishMiningStrategy {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MiningStrategyEnum {
     Honest,
-    PurePropagationDelay {
-        propagation_delay: i64,
-    },
-    SimpleSubmissionPostpone {
-        postpone_time: i64,
-    },
-    KLeadSelfishMining {
-        k: i64,
-    },
+    PurePropagationDelay { propagation_delay: i64 },
+    SimpleSubmissionPostpone { postpone_time: i64 },
+    KLeadSelfishMining { k: i64 },
 }
 
 impl MiningStrategyEnum {
@@ -214,4 +200,3 @@ impl MiningStrategyEnum {
         }
     }
 }
-
