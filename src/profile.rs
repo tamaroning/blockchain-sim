@@ -1,4 +1,4 @@
-use crate::types::{MiningStrategy, MiningStrategyEnum};
+use crate::mining_strategy::{MiningStrategy, MiningStrategyEnum};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn test_profile_serialization() {
-        use crate::types::MiningStrategyEnum;
+        use crate::mining_strategy::MiningStrategyEnum;
 
         let profile = NetworkProfile {
             nodes: vec![

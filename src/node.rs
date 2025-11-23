@@ -1,4 +1,4 @@
-use crate::types::MiningStrategy;
+use crate::mining_strategy::MiningStrategy;
 
 /// ノードを表す構造体
 pub struct Node {
@@ -13,7 +13,7 @@ pub struct Node {
 
 impl Node {
     pub fn new(id: usize, hashrate: i64) -> Self {
-        Self::new_with_strategy(id, hashrate, Box::new(crate::types::HonestMiningStrategy))
+        Self::new_with_strategy(id, hashrate, Box::new(crate::mining_strategy::HonestMiningStrategy))
     }
 
     pub fn new_with_strategy(
