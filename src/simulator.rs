@@ -135,17 +135,7 @@ impl BlockchainSimulator {
     }
 
     fn propagation_time(&self, from: usize, to: usize) -> i64 {
-        if from == to {
-            0
-        } else {
-            let base_delay = self.delay;
-            self.nodes[from].mining_strategy().adjust_propagation_time(
-                base_delay,
-                from,
-                to,
-                self.current_time,
-            )
-        }
+        if from == to { 0 } else { self.delay }
     }
 
     fn choose_mainchain(&mut self, block1_id: usize, block2_id: usize, _from: usize, to: usize) {
