@@ -197,7 +197,7 @@ impl BlockchainSimulator {
                         continue;
                     }
 
-                    // k-lead selfish miningの場合、プライベートチェーンの先頭を使用
+                    // プライベートチェーンがあれば先頭ブロックを起点にマイニングする
                     let mining_base_block_id =
                         if let Some(private_tip) = self.nodes[*minter].private_chain_tip() {
                             private_tip
@@ -236,7 +236,7 @@ impl BlockchainSimulator {
 
                     let new_block_id = self.blockchain.add_block(new_block.clone());
 
-                    // k-lead selfish mining: プライベートチェーンに追加
+                    // プライベートチェーンの先頭に設定
                     self.nodes[*minter].set_private_chain_tip(Some(new_block_id));
 
                     // 公開チェーンの高さを取得（current_block_idから辿る）
