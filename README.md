@@ -8,6 +8,7 @@ My blockchain simulator
 k-lead selfish mining
 ```bash
 RUST_LOG="info" cargo run --release -- --profile ../examples/k_lead_effective.json --end-round 1000000
+RUST_LOG="info" cargo run --release -- --profile ../examples/single_attacker_30pct.json --end-round 1000000
 ```
 
 
@@ -37,12 +38,10 @@ uv run plot-time.py data/bitcoin-0.001.csv
 uv run plot-time.py data/bitcoin-0.01.csv
 uv run plot-time.py data/bitcoin-0.1.csv
 uv run plot-time.py data/bitcoin-0.5.csv
-uv run plot-time.py data/bitcoin-1.0.csv
 uv run plot-time.py data/ethereum-0.001.csv
 uv run plot-time.py data/ethereum-0.01.csv
 uv run plot-time.py data/ethereum-0.1.csv
 uv run plot-time.py data/ethereum-0.5.csv
-uv run plot-time.py data/ethereum-1.0.csv
 ```
 
 <!--

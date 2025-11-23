@@ -19,12 +19,11 @@ pub struct BlockchainSimulator {
     nodes: Vec<Node>,
     total_hashrate: i64,
     end_round: i64,
-    blockchain: Blockchain,
+    pub blockchain: Blockchain,
     rng: StdRng,
     protocol: Box<dyn Protocol>,
     /// CSV出力用のライター
-    csv: Option<csv::Writer<std::fs::File>>,
-    csv_written_block_heights: HashSet<i64>,
+    pub csv: Option<csv::Writer<std::fs::File>>,
 
     /// タスクキュー
     task_queue: PriorityQueue<Task, i64>,
@@ -72,7 +71,6 @@ impl BlockchainSimulator {
             rng,
             protocol,
             csv,
-            csv_written_block_heights: HashSet::with_capacity(end_round as usize * 4),
             task_queue,
         }
     }
@@ -119,7 +117,6 @@ impl BlockchainSimulator {
             rng,
             protocol,
             csv,
-            csv_written_block_heights: HashSet::with_capacity(end_round as usize * 4),
             task_queue,
         })
     }
@@ -215,7 +212,6 @@ impl BlockchainSimulator {
                     let Some(current_mining_time) = self.nodes[*minter].next_mining_time() else {
                         unreachable!("next_mining_time should be set for all nodes");
                     };
-                    let mining_time = current_mining_time - self.current_time;
                     let next_mining_time = current_mining_time
                         + (exp_dist.sample(&mut self.rng)
                             * self.generation_time as f64
@@ -231,7 +227,7 @@ impl BlockchainSimulator {
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         self.blockchain.next_block_id(),
                         new_difficulty,
-                        mining_time,
+                        self.current_time - mining_base_block.time(),
                     );
 
                     let new_block_id = self.blockchain.add_block(new_block.clone());
@@ -272,40 +268,6 @@ impl BlockchainSimulator {
                             self.nodes[*minter].set_next_mining_time(Some(task.time()));
                         }
                         self.enqueue_task(task);
-                    }
-
-                    // CSV出力は公開されたブロックに対して行う
-                    if let Some(csv) = &mut self.csv {
-                        // プライベートチェーンのすべてのブロックを記録
-                        let mut chain = Vec::new();
-                        let mut current_id = new_block_id;
-                        loop {
-                            let block = self.blockchain.get_block(current_id).unwrap();
-                            if block.height() <= public_chain_height {
-                                break;
-                            }
-                            chain.push(current_id);
-                            if let Some(prev_id) = block.prev_block_id() {
-                                current_id = prev_id;
-                            } else {
-                                break;
-                            }
-                        }
-                        chain.reverse();
-
-                        for &block_id in &chain {
-                            let block = self.blockchain.get_block(block_id).unwrap();
-                            if !self.csv_written_block_heights.contains(&block.height()) {
-                                self.csv_written_block_heights.insert(block.height());
-                                let block_difficulty = block.difficulty();
-                                csv.serialize(&crate::types::Record {
-                                    round: block.height() as u32,
-                                    difficulty: block_difficulty,
-                                    mining_time: block.mining_time,
-                                })
-                                .expect("Failed to write CSV record");
-                            }
-                        }
                     }
 
                     if self.current_round < new_block.height() {

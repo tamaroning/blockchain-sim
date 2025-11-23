@@ -104,7 +104,7 @@ def plot_specific_deltas(delta_values=None, output_file="plot.png", protocol="")
         protocol (str): プロトコル名（例: "bitcoin", "ethereum"）
     """
     if delta_values is None:
-        delta_values = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
+        delta_values = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5]
 
     plt.figure(figsize=(12, 8))
     colors = plt.cm.tab10(np.linspace(0, 1, len(delta_values)))
@@ -200,8 +200,8 @@ def main():
     parser.add_argument(
         "--deltas",
         type=str,
-        default="0.001,0.01,0.05,0.1,0.25,0.5,0.75,1.0",
-        help="delta値をカンマ区切りで指定 (デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5,0.75,1.0)",
+        default="0.001,0.01,0.05,0.1,0.25,0.5",
+        help="delta値をカンマ区切りで指定 (デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5)",
     )
 
     args = parser.parse_args()

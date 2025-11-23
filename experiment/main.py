@@ -99,8 +99,8 @@ def main():
     parser.add_argument(
         "--delta-values",
         type=parse_delta_values,
-        default=[0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0],
-        help="実行するdelta値のリスト（コンマ区切り）(デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5,0.75,1.0)",
+        default=[0.001, 0.01, 0.05, 0.1, 0.25, 0.5],
+        help="実行するdelta値のリスト（コンマ区切り）(デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5)",
     )
 
     parser.add_argument(

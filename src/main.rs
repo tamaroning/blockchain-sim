@@ -66,7 +66,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     e
                 )
             })?;
-        log::info!("プロファイルファイル '{}' を読み込みました", profile_path.display());
+        log::info!(
+            "プロファイルファイル '{}' を読み込みました",
+            profile_path.display()
+        );
         log::info!("読み込んだノード数: {}", profile.num_nodes());
         BlockchainSimulator::new_with_profile(
             profile,
@@ -98,5 +101,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     //simulator.print_blockchain();
     simulator.print_summary();
     simulator.print_mining_fairness();
+
+    // CSVにmainchainのブロックを出力
+    // round,difficulty,time
+    if let Some(csv) = &mut simulator.csv {
+        for block in simulator.blockchain.get_main_chain() {
+            let block = simulator.blockchain.get_block(block).unwrap();
+            let record = blockchain_sim::types::Record {
+                round: block.height() as u32,
+                difficulty: block.difficulty(),
+                mining_time: block.mining_time,
+            };
+            csv.serialize(&record).unwrap();
+        }
+    }
+
     Ok(())
 }
