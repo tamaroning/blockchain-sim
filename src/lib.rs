@@ -12,5 +12,8 @@ pub use node::Node;
 pub use protocol::{Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
 pub use task::{Task, TaskType};
-pub use types::{Record, TieBreakingRule};
+pub use types::{
+    HonestMiningStrategy, MiningStrategy, Record, SelfishMiningStrategy,
+    SimpleSubmissionPostpone, TieBreakingRule,
+};
 

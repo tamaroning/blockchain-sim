@@ -60,4 +60,5 @@ fn main() {
     simulator.simulation();
     //simulator.print_blockchain();
     simulator.print_summary();
+    simulator.print_mining_fairness();
 }

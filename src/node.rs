@@ -1,18 +1,30 @@
+use crate::types::MiningStrategy;
+
 /// ノードを表す構造体
 pub struct Node {
     id: usize,
     hashrate: i64,
     current_block_id: usize,
     next_mining_time: Option<i64>,
+    mining_strategy: Box<dyn MiningStrategy>,
 }
 
 impl Node {
     pub fn new(id: usize, hashrate: i64) -> Self {
+        Self::new_with_strategy(id, hashrate, Box::new(crate::types::HonestMiningStrategy))
+    }
+
+    pub fn new_with_strategy(
+        id: usize,
+        hashrate: i64,
+        mining_strategy: Box<dyn MiningStrategy>,
+    ) -> Self {
         Self {
             id,
             hashrate,
             current_block_id: 0, // ジェネシスブロック
             next_mining_time: None,
+            mining_strategy,
         }
     }
 
@@ -43,6 +55,10 @@ impl Node {
     pub fn reset(&mut self) {
         self.current_block_id = 0;
         self.next_mining_time = None;
+    }
+
+    pub fn mining_strategy(&self) -> &dyn MiningStrategy {
+        self.mining_strategy.as_ref()
     }
 }
 

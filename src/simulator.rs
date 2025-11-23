@@ -87,7 +87,14 @@ impl BlockchainSimulator {
     }
 
     fn propagation_time(&self, from: usize, to: usize) -> i64 {
-        if from == to { 0 } else { self.delay }
+        if from == to {
+            0
+        } else {
+            let base_delay = self.delay;
+            self.nodes[from]
+                .mining_strategy()
+                .adjust_propagation_time(base_delay, from, to, self.current_time)
+        }
     }
 
     fn choose_mainchain(&mut self, block1_id: usize, block2_id: usize, _from: usize, to: usize) {
@@ -202,8 +209,19 @@ impl BlockchainSimulator {
                     // 伝播タスクをスケジュール
                     for i in 0..self.nodes.len() {
                         if i != *minter {
+                            let base_publish_time = next_time;
+                            // 戦略でブロック公開時刻を調整
+                            let adjusted_publish_time = self.nodes[*minter]
+                                .mining_strategy()
+                                .adjust_block_publish_time(
+                                    base_publish_time,
+                                    *minter,
+                                    i,
+                                    self.current_time,
+                                );
+                            let prop_delay = self.propagation_time(*minter, i);
                             let prop_task = Task::new(
-                                next_time + self.propagation_time(*minter, i),
+                                adjusted_publish_time + prop_delay,
                                 TaskType::Propagation {
                                     from: *minter,
                                     to: i,
@@ -331,5 +349,62 @@ impl BlockchainSimulator {
         // Δ/T = 遅延 / 生成時間
         let ratio = self.delay as f64 / self.generation_time as f64;
         log::info!("- Δ/T: {:.2}", ratio);
+    }
+
+    /// メインチェーンをトラバーサルして報酬を計算し、mining fairnessを表示する
+    pub fn print_mining_fairness(&self) {
+        let main_chain = self.blockchain.get_main_chain();
+        
+        // 各ノードの報酬をカウント（ジェネシスブロックを除く）
+        let mut rewards: Vec<f64> = vec![0.0; self.nodes.len()];
+        
+        for &block_id in &main_chain {
+            if let Some(block) = self.blockchain.get_block(block_id) {
+                let minter = block.minter();
+                if minter >= 0 {
+                    let node_id = minter as usize;
+                    if node_id < rewards.len() {
+                        rewards[node_id] += 1.0;
+                    }
+                }
+            }
+        }
+
+        // mining fairness = reward / hashrate を計算
+        let mut fairness_data: Vec<(usize, f64, f64, f64)> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .map(|(i, node)| {
+                let reward = rewards[i];
+                let hashrate = node.hashrate() as f64;
+                let fairness = if hashrate > 0.0 {
+                    reward / hashrate
+                } else {
+                    0.0
+                };
+                (i, reward, hashrate, fairness)
+            })
+            .collect();
+
+        // mining fairnessが高い順にソート
+        fairness_data.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+
+        log::info!("Mining Fairness Ranking (top 5):");
+        log::info!("Rank | Node ID | Reward | Hashrate | Fairness (Reward/Hashrate) | Strategy");
+        log::info!("-----|---------|--------|----------|--------------------------|----------");
+        
+        for (rank, (node_id, reward, hashrate, fairness)) in fairness_data.iter().take(5).enumerate() {
+            let strategy_name = self.nodes[*node_id].mining_strategy().name();
+            log::info!(
+                "{:4} | {:7} | {:6.1} | {:8} | {:24.6} | {}",
+                rank + 1,
+                node_id,
+                reward,
+                hashrate,
+                fairness,
+                strategy_name
+            );
+        }
     }
 }
