@@ -1,6 +1,6 @@
 {
   "network_name": "k_lead_effective",
-  "description": "k=2 の k-lead selfish miner が十分なハッシュレートを持つ構成",
+  "description": "攻撃者のhashrateシェア=50.3%",
   "nodes": [
     {
       "hashrate": 700,
