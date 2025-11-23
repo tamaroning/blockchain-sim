@@ -1,0 +1,48 @@
+/// ノードを表す構造体
+pub struct Node {
+    id: usize,
+    hashrate: i64,
+    current_block_id: usize,
+    next_mining_time: Option<i64>,
+}
+
+impl Node {
+    pub fn new(id: usize, hashrate: i64) -> Self {
+        Self {
+            id,
+            hashrate,
+            current_block_id: 0, // ジェネシスブロック
+            next_mining_time: None,
+        }
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn hashrate(&self) -> i64 {
+        self.hashrate
+    }
+
+    pub fn current_block_id(&self) -> usize {
+        self.current_block_id
+    }
+
+    pub fn set_current_block_id(&mut self, block_id: usize) {
+        self.current_block_id = block_id;
+    }
+
+    pub fn next_mining_time(&self) -> Option<i64> {
+        self.next_mining_time
+    }
+
+    pub fn set_next_mining_time(&mut self, time: Option<i64>) {
+        self.next_mining_time = time;
+    }
+
+    pub fn reset(&mut self) {
+        self.current_block_id = 0;
+        self.next_mining_time = None;
+    }
+}
+
