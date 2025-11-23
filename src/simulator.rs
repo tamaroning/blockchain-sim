@@ -432,12 +432,9 @@ impl BlockchainSimulator {
             for i in 0..self.nodes.len() {
                 if i != minter {
                     let publish_time = base_publish_time + (idx as i64 * self.delay);
-                    let adjusted_publish_time = self.nodes[minter]
-                        .mining_strategy()
-                        .adjust_block_publish_time(publish_time, minter, i, self.current_time);
                     let prop_delay = self.propagation_time(minter, i);
                     let prop_task = Task::new(
-                        adjusted_publish_time + prop_delay,
+                        publish_time + prop_delay,
                         TaskType::Propagation {
                             from: minter,
                             to: i,

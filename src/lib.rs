@@ -10,12 +10,11 @@ pub mod types;
 pub use block::Block;
 pub use blockchain::Blockchain;
 pub use node::Node;
+pub use profile::{NetworkProfile, NodeProfile};
 pub use protocol::{Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
 pub use task::{Task, TaskType};
-pub use profile::{NetworkProfile, NodeProfile};
 pub use types::{
     HonestMiningStrategy, KLeadSelfishMiningStrategy, MiningStrategy, MiningStrategyEnum, Record,
-    PurePropagationDelay, SimpleSubmissionPostpone, TieBreakingRule,
+    TieBreakingRule,
 };
-
