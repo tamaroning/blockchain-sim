@@ -1,6 +1,7 @@
 use crate::block::Block;
 use crate::blockchain::Blockchain;
 use crate::node::Node;
+use crate::profile::NetworkProfile;
 use crate::protocol::Protocol;
 use crate::task::{Task, TaskType};
 use crate::types::TieBreakingRule;
@@ -76,6 +77,53 @@ impl BlockchainSimulator {
         }
     }
 
+    /// プロファイルからシミュレーターを作成
+    pub fn new_with_profile(
+        profile: NetworkProfile,
+        seed: u64,
+        end_round: i64,
+        tie: TieBreakingRule,
+        delay: i64,
+        generation_time: i64,
+        protocol: Box<dyn Protocol>,
+        csv: Option<csv::Writer<std::fs::File>>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut nodes = Vec::with_capacity(profile.num_nodes());
+
+        // プロファイルからノードを作成
+        for i in 0..profile.num_nodes() {
+            let node_profile = &profile.nodes[i];
+            let strategy = profile.create_strategy(i)?;
+            nodes.push(Node::new_with_strategy(i, node_profile.hashrate, strategy));
+        }
+
+        log::info!(
+            "Hashrates: {:?}",
+            nodes.iter().map(|n| n.hashrate()).collect::<Vec<_>>()
+        );
+
+        let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
+        let task_queue = PriorityQueue::<Task, i64>::new();
+        let rng = StdRng::seed_from_u64(seed);
+
+        Ok(Self {
+            current_round: 0,
+            current_time: 0,
+            delay,
+            generation_time,
+            tie,
+            nodes,
+            total_hashrate,
+            end_round,
+            blockchain: Blockchain::new(),
+            rng,
+            protocol,
+            csv,
+            csv_written_block_heights: HashSet::with_capacity(end_round as usize * 4),
+            task_queue,
+        })
+    }
+
     fn enqueue_task(&mut self, task: Task) {
         let time = task.time();
         // PriorityQueueは最大キューなので符号反転する
@@ -91,9 +139,12 @@ impl BlockchainSimulator {
             0
         } else {
             let base_delay = self.delay;
-            self.nodes[from]
-                .mining_strategy()
-                .adjust_propagation_time(base_delay, from, to, self.current_time)
+            self.nodes[from].mining_strategy().adjust_propagation_time(
+                base_delay,
+                from,
+                to,
+                self.current_time,
+            )
         }
     }
 
@@ -156,42 +207,43 @@ impl BlockchainSimulator {
                         continue;
                     }
 
-                    let current_block_id = self.nodes[*minter].current_block_id();
-                    let current_block = self.blockchain.get_block(current_block_id).unwrap();
+                    // k-lead selfish miningの場合、プライベートチェーンの先頭を使用
+                    let mining_base_block_id =
+                        if let Some(private_tip) = self.nodes[*minter].private_chain_tip() {
+                            private_tip
+                        } else {
+                            self.nodes[*minter].current_block_id()
+                        };
+                    let mining_base_block =
+                        self.blockchain.get_block(mining_base_block_id).unwrap();
 
                     // 次のマイニングタスクをスケジュール
                     let Some(next_time) = self.nodes[*minter].next_mining_time() else {
                         unreachable!("next_mining_time should be set for all nodes");
                     };
-                    self.schedule_next_mining_task(*minter, next_time, current_block.difficulty());
+                    self.schedule_next_mining_task(
+                        *minter,
+                        next_time,
+                        mining_base_block.difficulty(),
+                    );
                     let mining_time =
                         self.nodes[*minter].next_mining_time().unwrap() - self.current_time;
 
-                    let current_block_id = self.nodes[*minter].current_block_id();
-                    let current_block = self.blockchain.get_block(current_block_id).unwrap();
+                    let mining_base_block_id =
+                        if let Some(private_tip) = self.nodes[*minter].private_chain_tip() {
+                            private_tip
+                        } else {
+                            self.nodes[*minter].current_block_id()
+                        };
+                    let mining_base_block =
+                        self.blockchain.get_block(mining_base_block_id).unwrap();
 
                     // 難易度調整
-                    let new_difficulty = self.calculate_new_difficulty(current_block);
-
-                    if let Some(csv) = &mut self.csv {
-                        if !self
-                            .csv_written_block_heights
-                            .contains(&current_block.height())
-                        {
-                            self.csv_written_block_heights
-                                .insert(current_block.height());
-                            csv.serialize(&crate::types::Record {
-                                round: current_block.height() as u32,
-                                difficulty: new_difficulty,
-                                mining_time: current_block.mining_time,
-                            })
-                            .expect("Failed to write CSV record");
-                        }
-                    }
+                    let new_difficulty = self.calculate_new_difficulty(mining_base_block);
 
                     let new_block = Block::new(
-                        current_block.height() + 1,
-                        Some(current_block_id),
+                        mining_base_block.height() + 1,
+                        Some(mining_base_block_id),
                         *minter as i32,
                         self.current_time,
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
@@ -201,35 +253,71 @@ impl BlockchainSimulator {
                     );
 
                     let new_block_id = self.blockchain.add_block(new_block.clone());
-                    self.nodes[*minter].set_current_block_id(new_block_id);
-                    if self.current_round < new_block.height() {
-                        self.current_round = new_block.height();
+
+                    // k-lead selfish mining: プライベートチェーンに追加
+                    self.nodes[*minter].set_private_chain_tip(Some(new_block_id));
+
+                    // 公開チェーンの高さを取得（current_block_idから辿る）
+                    let public_chain_height = {
+                        let public_block = self
+                            .blockchain
+                            .get_block(self.nodes[*minter].current_block_id())
+                            .unwrap();
+                        public_block.height()
+                    };
+
+                    // プライベートチェーンの高さ
+                    let private_chain_height = new_block.height();
+
+                    // 公開すべきかどうかを判断
+                    let should_publish = self.nodes[*minter]
+                        .mining_strategy()
+                        .should_publish_block(private_chain_height, public_chain_height);
+
+                    if should_publish {
+                        // kブロックのリードが達成されたので、プライベートチェーンのすべてのブロックを公開
+                        self.publish_private_chain(*minter, new_block_id, next_time);
+                        // プライベートチェーンをクリアし、公開チェーンに切り替え
+                        self.nodes[*minter].set_current_block_id(new_block_id);
+                        self.nodes[*minter].set_private_chain_tip(None);
+
+                        // CSV出力は公開されたブロックに対して行う
+                        if let Some(csv) = &mut self.csv {
+                            // プライベートチェーンのすべてのブロックを記録
+                            let mut chain = Vec::new();
+                            let mut current_id = new_block_id;
+                            loop {
+                                let block = self.blockchain.get_block(current_id).unwrap();
+                                if block.height() <= public_chain_height {
+                                    break;
+                                }
+                                chain.push(current_id);
+                                if let Some(prev_id) = block.prev_block_id() {
+                                    current_id = prev_id;
+                                } else {
+                                    break;
+                                }
+                            }
+                            chain.reverse();
+
+                            for &block_id in &chain {
+                                let block = self.blockchain.get_block(block_id).unwrap();
+                                if !self.csv_written_block_heights.contains(&block.height()) {
+                                    self.csv_written_block_heights.insert(block.height());
+                                    let block_difficulty = block.difficulty();
+                                    csv.serialize(&crate::types::Record {
+                                        round: block.height() as u32,
+                                        difficulty: block_difficulty,
+                                        mining_time: block.mining_time,
+                                    })
+                                    .expect("Failed to write CSV record");
+                                }
+                            }
+                        }
                     }
 
-                    // 伝播タスクをスケジュール
-                    for i in 0..self.nodes.len() {
-                        if i != *minter {
-                            let base_publish_time = next_time;
-                            // 戦略でブロック公開時刻を調整
-                            let adjusted_publish_time = self.nodes[*minter]
-                                .mining_strategy()
-                                .adjust_block_publish_time(
-                                    base_publish_time,
-                                    *minter,
-                                    i,
-                                    self.current_time,
-                                );
-                            let prop_delay = self.propagation_time(*minter, i);
-                            let prop_task = Task::new(
-                                adjusted_publish_time + prop_delay,
-                                TaskType::Propagation {
-                                    from: *minter,
-                                    to: i,
-                                    block_id: self.nodes[*minter].current_block_id(),
-                                },
-                            );
-                            self.enqueue_task(prop_task);
-                        }
+                    if self.current_round < new_block.height() {
+                        self.current_round = new_block.height();
                     }
 
                     log::debug!(
@@ -252,12 +340,27 @@ impl BlockchainSimulator {
 
                     // 伝播されたブロックによってメインチェーンを更新
                     let current_block_id = self.nodes[*to].current_block_id();
+                    let old_block = self.blockchain.get_block(current_block_id).unwrap();
+                    let old_height = old_block.height();
                     self.choose_mainchain(*block_id, current_block_id, *from, *to);
+
+                    // メインチェーンが更新されたかチェック
+                    let new_block_id = self.nodes[*to].current_block_id();
+                    let (new_height, new_difficulty) = {
+                        let new_block = self.blockchain.get_block(new_block_id).unwrap();
+                        let height = new_block.height();
+                        let difficulty = self.calculate_new_difficulty(new_block);
+                        (height, difficulty)
+                    };
+
+                    // k-lead selfish mining: 公開チェーンが更新された場合、プライベートチェーンを無効化
+                    if new_height > old_height {
+                        // 公開チェーンが更新されたので、プライベートチェーンをクリア
+                        self.nodes[*to].set_private_chain_tip(None);
+                    }
 
                     // 受け取ったノードは次のマイニングタスクをキャンセルし、新しい難易度でスケジュールし直す
                     self.cancel_next_mining_task(*to);
-                    let new_difficulty = self
-                        .calculate_new_difficulty(self.blockchain.get_block(*block_id).unwrap());
                     self.schedule_next_mining_task(*to, self.current_time, new_difficulty);
                 }
             }
@@ -272,6 +375,64 @@ impl BlockchainSimulator {
                 !(task.task_type() == &TaskType::BlockGeneration { minter: node }
                     && task.time() == next_time)
             });
+        }
+    }
+
+    /// プライベートチェーンのすべてのブロックを公開する
+    /// `tip_block_id`: プライベートチェーンの先頭ブロックID
+    /// `base_publish_time`: 公開開始時刻
+    fn publish_private_chain(
+        &mut self,
+        minter: usize,
+        tip_block_id: usize,
+        base_publish_time: i64,
+    ) {
+        // プライベートチェーンを構築（tipからprev_block_idを辿る）
+        let mut private_chain = Vec::new();
+        let mut current_id = tip_block_id;
+        let public_block_id = self.nodes[minter].current_block_id();
+
+        // 公開チェーンの先頭ブロックを取得
+        let public_block = self.blockchain.get_block(public_block_id).unwrap();
+        let public_height = public_block.height();
+
+        // プライベートチェーンを構築（公開チェーンの高さより大きいブロックのみ）
+        loop {
+            let block = self.blockchain.get_block(current_id).unwrap();
+            if block.height() <= public_height {
+                break;
+            }
+            private_chain.push(current_id);
+            if let Some(prev_id) = block.prev_block_id() {
+                current_id = prev_id;
+            } else {
+                break;
+            }
+        }
+
+        // プライベートチェーンを逆順にして、古いブロックから順に公開
+        private_chain.reverse();
+
+        // 各ブロックを順番に伝播
+        for (idx, &block_id) in private_chain.iter().enumerate() {
+            for i in 0..self.nodes.len() {
+                if i != minter {
+                    let publish_time = base_publish_time + (idx as i64 * self.delay);
+                    let adjusted_publish_time = self.nodes[minter]
+                        .mining_strategy()
+                        .adjust_block_publish_time(publish_time, minter, i, self.current_time);
+                    let prop_delay = self.propagation_time(minter, i);
+                    let prop_task = Task::new(
+                        adjusted_publish_time + prop_delay,
+                        TaskType::Propagation {
+                            from: minter,
+                            to: i,
+                            block_id,
+                        },
+                    );
+                    self.enqueue_task(prop_task);
+                }
+            }
         }
     }
 
@@ -352,12 +513,13 @@ impl BlockchainSimulator {
     }
 
     /// メインチェーンをトラバーサルして報酬を計算し、mining fairnessを表示する
+    /// mining fairness = rewardのシェア / hashrateのシェア
     pub fn print_mining_fairness(&self) {
         let main_chain = self.blockchain.get_main_chain();
-        
+
         // 各ノードの報酬をカウント（ジェネシスブロックを除く）
         let mut rewards: Vec<f64> = vec![0.0; self.nodes.len()];
-        
+
         for &block_id in &main_chain {
             if let Some(block) = self.blockchain.get_block(block_id) {
                 let minter = block.minter();
@@ -370,7 +532,10 @@ impl BlockchainSimulator {
             }
         }
 
-        // mining fairness = reward / hashrate を計算
+        // 全ノードの報酬の合計を計算
+        let total_reward: f64 = rewards.iter().sum();
+
+        // mining fairness = rewardのシェア / hashrateのシェア を計算
         let mut fairness_data: Vec<(usize, f64, f64, f64)> = self
             .nodes
             .iter()
@@ -378,11 +543,28 @@ impl BlockchainSimulator {
             .map(|(i, node)| {
                 let reward = rewards[i];
                 let hashrate = node.hashrate() as f64;
-                let fairness = if hashrate > 0.0 {
-                    reward / hashrate
+
+                // rewardのシェア = そのノードの報酬 / 全ノードの報酬の合計
+                let reward_share = if total_reward > 0.0 {
+                    reward / total_reward
                 } else {
                     0.0
                 };
+
+                // hashrateのシェア = そのノードのハッシュレート / 全ノードのハッシュレートの合計
+                let hashrate_share = if self.total_hashrate > 0 {
+                    hashrate / self.total_hashrate as f64
+                } else {
+                    0.0
+                };
+
+                // mining fairness = rewardのシェア / hashrateのシェア
+                let fairness = if hashrate_share > 0.0 {
+                    reward_share / hashrate_share
+                } else {
+                    0.0
+                };
+
                 (i, reward, hashrate, fairness)
             })
             .collect();
@@ -390,11 +572,26 @@ impl BlockchainSimulator {
         // mining fairnessが高い順にソート
         fairness_data.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
 
-        log::info!("Mining Fairness Ranking (top 5):");
-        log::info!("Rank | Node ID | Reward | Hashrate | Fairness (Reward/Hashrate) | Strategy");
+        // ノード数が30以下の場合は全て表示、それ以上の場合は上位5位のみ表示
+        let display_count = if self.nodes.len() <= 30 {
+            self.nodes.len()
+        } else {
+            30
+        };
+
+        if display_count == self.nodes.len() {
+            log::info!("Mining Fairness Ranking (all nodes):");
+        } else {
+            log::info!("Mining Fairness Ranking (top {}):", display_count);
+        }
+        log::info!(
+            "Rank | Node ID | Reward | Hashrate | Fairness (Reward Share/Hashrate Share) | Strategy"
+        );
         log::info!("-----|---------|--------|----------|--------------------------|----------");
-        
-        for (rank, (node_id, reward, hashrate, fairness)) in fairness_data.iter().take(5).enumerate() {
+
+        for (rank, (node_id, reward, hashrate, fairness)) in
+            fairness_data.iter().take(display_count).enumerate()
+        {
             let strategy_name = self.nodes[*node_id].mining_strategy().name();
             log::info!(
                 "{:4} | {:7} | {:6.1} | {:8} | {:24.6} | {}",

@@ -7,6 +7,8 @@ pub struct Node {
     current_block_id: usize,
     next_mining_time: Option<i64>,
     mining_strategy: Box<dyn MiningStrategy>,
+    /// プライベートチェーンの先頭ブロックID（k-lead selfish mining用）
+    private_chain_tip: Option<usize>,
 }
 
 impl Node {
@@ -25,6 +27,7 @@ impl Node {
             current_block_id: 0, // ジェネシスブロック
             next_mining_time: None,
             mining_strategy,
+            private_chain_tip: None,
         }
     }
 
@@ -55,10 +58,19 @@ impl Node {
     pub fn reset(&mut self) {
         self.current_block_id = 0;
         self.next_mining_time = None;
+        self.private_chain_tip = None;
     }
 
     pub fn mining_strategy(&self) -> &dyn MiningStrategy {
         self.mining_strategy.as_ref()
+    }
+
+    pub fn private_chain_tip(&self) -> Option<usize> {
+        self.private_chain_tip
+    }
+
+    pub fn set_private_chain_tip(&mut self, block_id: Option<usize>) {
+        self.private_chain_tip = block_id;
     }
 }
 

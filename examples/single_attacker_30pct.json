@@ -1,0 +1,187 @@
+{
+  "network_name": "single_attacker_30pct",
+  "description": "単独攻撃者(hashrate 30%)と29個のhonestノード(合計30ノード)",
+  "nodes": [
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 2414,
+      "strategy": {
+        "type": "honest"
+      }
+    },
+    {
+      "hashrate": 30000,
+      "strategy": {
+        "type": "k_lead_selfish_mining",
+        "k": 1
+      }
+    }
+  ]
+}

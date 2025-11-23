@@ -1,6 +1,7 @@
 pub mod block;
 pub mod blockchain;
 pub mod node;
+pub mod profile;
 pub mod protocol;
 pub mod simulator;
 pub mod task;
@@ -12,8 +13,9 @@ pub use node::Node;
 pub use protocol::{Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
 pub use task::{Task, TaskType};
+pub use profile::{NetworkProfile, NodeProfile};
 pub use types::{
-    HonestMiningStrategy, MiningStrategy, Record, SelfishMiningStrategy,
-    SimpleSubmissionPostpone, TieBreakingRule,
+    HonestMiningStrategy, KLeadSelfishMiningStrategy, MiningStrategy, MiningStrategyEnum, Record,
+    PurePropagationDelay, SimpleSubmissionPostpone, TieBreakingRule,
 };
 

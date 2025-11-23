@@ -1,5 +1,5 @@
 use clap::ValueEnum;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(ValueEnum, Debug, Clone, Default, PartialEq)]
 #[clap(rename_all = "kebab_case")]
@@ -56,9 +56,23 @@ pub trait MiningStrategy: Send + Sync {
         // デフォルト実装：何も調整しない
         base_publish_time
     }
+
+    /// ブロックを公開すべきかどうかを判断する
+    /// `private_chain_height`: プライベートチェーンの高さ
+    /// `public_chain_height`: 公開チェーンの高さ
+    /// 返り値: 公開すべきかどうか
+    fn should_publish_block(
+        &self,
+        _private_chain_height: i64,
+        _public_chain_height: i64,
+    ) -> bool {
+        // デフォルト実装：常に公開する
+        true
+    }
 }
 
 /// 通常のマイニング戦略（何も調整しない）
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HonestMiningStrategy;
 
 impl MiningStrategy for HonestMiningStrategy {
@@ -67,21 +81,24 @@ impl MiningStrategy for HonestMiningStrategy {
     }
 }
 
-/// Selfish mining戦略
-pub struct SelfishMiningStrategy {
+/// Pure propagation delay戦略
+/// ブロックの伝播時間を一定時間だけ遅らせる
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PurePropagationDelay {
     /// 自分のブロックの伝播を遅らせる時間
-    propagation_delay: i64,
+    #[serde(default)]
+    pub propagation_delay: i64,
 }
 
-impl SelfishMiningStrategy {
+impl PurePropagationDelay {
     pub fn new(propagation_delay: i64) -> Self {
         Self { propagation_delay }
     }
 }
 
-impl MiningStrategy for SelfishMiningStrategy {
+impl MiningStrategy for PurePropagationDelay {
     fn name(&self) -> &'static str {
-        "Selfish"
+        "PurePropagationDelay"
     }
 
     fn adjust_propagation_time(
@@ -99,9 +116,11 @@ impl MiningStrategy for SelfishMiningStrategy {
 
 /// SimpleSubmissionPostpone戦略
 /// ブロックの公開（伝播開始）を一定時間だけ遅らせる
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SimpleSubmissionPostpone {
     /// 公開を遅らせる時間
-    postpone_time: i64,
+    #[serde(default)]
+    pub postpone_time: i64,
 }
 
 impl SimpleSubmissionPostpone {
@@ -125,6 +144,74 @@ impl MiningStrategy for SimpleSubmissionPostpone {
         // ブロック公開時刻に遅延を追加
         // この戦略を持つノードが`from`であることが保証されている
         base_publish_time + self.postpone_time
+    }
+}
+
+/// k-lead selfish mining戦略
+/// プライベートチェーンが公開チェーンよりkブロック先に進むまでブロックを公開しない
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KLeadSelfishMiningStrategy {
+    /// リードを取る必要があるブロック数
+    #[serde(default = "default_k")]
+    pub k: i64,
+}
+
+fn default_k() -> i64 {
+    1
+}
+
+impl KLeadSelfishMiningStrategy {
+    pub fn new(k: i64) -> Self {
+        Self { k }
+    }
+}
+
+impl MiningStrategy for KLeadSelfishMiningStrategy {
+    fn name(&self) -> &'static str {
+        "KLeadSelfishMining"
+    }
+
+    fn should_publish_block(
+        &self,
+        private_chain_height: i64,
+        public_chain_height: i64,
+    ) -> bool {
+        // プライベートチェーンの高さが公開チェーンよりkブロック以上大きい場合のみ公開
+        private_chain_height >= public_chain_height + self.k
+    }
+}
+
+/// マイニング戦略をenumで表現（シリアライズ/デシリアライズ可能）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MiningStrategyEnum {
+    Honest,
+    PurePropagationDelay {
+        propagation_delay: i64,
+    },
+    SimpleSubmissionPostpone {
+        postpone_time: i64,
+    },
+    KLeadSelfishMining {
+        k: i64,
+    },
+}
+
+impl MiningStrategyEnum {
+    /// enumからMiningStrategyトレイトオブジェクトを作成
+    pub fn to_strategy(&self) -> Box<dyn MiningStrategy> {
+        match self {
+            MiningStrategyEnum::Honest => Box::new(HonestMiningStrategy),
+            MiningStrategyEnum::PurePropagationDelay { propagation_delay } => {
+                Box::new(PurePropagationDelay::new(*propagation_delay))
+            }
+            MiningStrategyEnum::SimpleSubmissionPostpone { postpone_time } => {
+                Box::new(SimpleSubmissionPostpone::new(*postpone_time))
+            }
+            MiningStrategyEnum::KLeadSelfishMining { k } => {
+                Box::new(KLeadSelfishMiningStrategy::new(*k))
+            }
+        }
     }
 }
 

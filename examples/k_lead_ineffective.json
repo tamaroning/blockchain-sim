@@ -1,0 +1,68 @@
+{
+    "network_name": "k_lead_ineffective",
+    "description": "k=2 の k-lead selfish miner のハッシュレートが小さい",
+    "nodes": [
+      {
+        "hashrate": 2000,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1800,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1500,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1200,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1000,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 900,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 800,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1200,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1900,
+        "strategy": {
+          "type": "honest"
+        }
+      },
+      {
+        "hashrate": 1500,
+        "strategy": {
+          "type": "k_lead_selfish_mining",
+          "k": 0
+        }
+      }
+    ]
+  }
+  
