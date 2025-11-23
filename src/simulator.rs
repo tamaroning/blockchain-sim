@@ -550,7 +550,7 @@ impl BlockchainSimulator {
         let total_reward: f64 = rewards.iter().sum();
 
         // mining fairness = rewardのシェア / hashrateのシェア を計算
-        let mut fairness_data: Vec<(usize, f64, f64, f64)> = self
+        let mut fairness_data: Vec<(usize, f64, f64, f64, f64, f64)> = self
             .nodes
             .iter()
             .enumerate()
@@ -579,12 +579,12 @@ impl BlockchainSimulator {
                     0.0
                 };
 
-                (i, reward, hashrate, fairness)
+                (i, reward, hashrate, reward_share, hashrate_share, fairness)
             })
             .collect();
 
         // mining fairnessが高い順にソート
-        fairness_data.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
+        fairness_data.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap_or(std::cmp::Ordering::Equal));
 
         // ノード数が30以下の場合は全て表示、それ以上の場合は上位5位のみ表示
         let display_count = if self.nodes.len() <= 30 {
@@ -599,20 +599,22 @@ impl BlockchainSimulator {
             log::info!("Mining Fairness Ranking (top {}):", display_count);
         }
         log::info!(
-            "Rank | Node ID | Reward | Hashrate | Fairness (Reward Share/Hashrate Share) | Strategy"
+            "Rank | Node ID | Reward (%) | Hashrate (%) | Fairness (Reward Share/Hashrate Share) | Strategy"
         );
-        log::info!("-----|---------|--------|----------|--------------------------|----------");
+        log::info!(
+            "-----|---------|------------|--------------|--------------------------|----------"
+        );
 
-        for (rank, (node_id, reward, hashrate, fairness)) in
+        for (rank, (node_id, _reward, _hashrate, reward_share, hashrate_share, fairness)) in
             fairness_data.iter().take(display_count).enumerate()
         {
             let strategy_name = self.nodes[*node_id].mining_strategy().name();
             log::info!(
-                "{:4} | {:7} | {:6.1} | {:8} | {:24.6} | {}",
+                "{:4} | {:7} | {:10.2} | {:12.2} | {:24.6} | {}",
                 rank + 1,
                 node_id,
-                reward,
-                hashrate,
+                reward_share * 100.0,
+                hashrate_share * 100.0,
                 fairness,
                 strategy_name
             );
