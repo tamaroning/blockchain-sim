@@ -5,7 +5,7 @@ pub mod node;
 pub mod profile;
 pub mod protocol;
 pub mod simulator;
-pub mod task;
+pub mod event;
 pub mod types;
 
 pub use block::Block;
@@ -17,5 +17,5 @@ pub use node::Node;
 pub use profile::{NetworkProfile, NodeProfile};
 pub use protocol::{Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
-pub use task::{Task, TaskType};
+pub use event::{Event, EventType};
 pub use types::{Record, TieBreakingRule};

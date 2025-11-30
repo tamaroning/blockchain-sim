@@ -1,10 +1,10 @@
 use crate::block::Block;
 use crate::blockchain::Blockchain;
+use crate::event::{Event, EventType};
 use crate::mining_strategy::Action;
 use crate::node::Node;
 use crate::profile::NetworkProfile;
 use crate::protocol::Protocol;
-use crate::task::{Task, TaskType};
 use crate::types::TieBreakingRule;
 use priority_queue::PriorityQueue;
 use rand::prelude::*;
@@ -12,11 +12,9 @@ use rand_distr::Exp;
 
 pub struct Env {
     // Configuration
-
     pub num_nodes: usize,
     pub delay: i64,
     pub generation_time: i64,
-
     // Current environments
     // TODO:
 }
@@ -37,7 +35,7 @@ pub struct BlockchainSimulator {
     pub csv: Option<csv::Writer<std::fs::File>>,
 
     /// タスクキュー
-    task_queue: PriorityQueue<Task, i64>,
+    event_queue: PriorityQueue<Event, i64>,
 }
 
 impl BlockchainSimulator {
@@ -67,7 +65,7 @@ impl BlockchainSimulator {
 
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
 
-        let task_queue = PriorityQueue::<Task, i64>::new();
+        let event_queue = PriorityQueue::<Event, i64>::new();
 
         Self {
             env: Env {
@@ -85,7 +83,7 @@ impl BlockchainSimulator {
             rng,
             protocol,
             csv,
-            task_queue,
+            event_queue,
         }
     }
 
@@ -115,7 +113,7 @@ impl BlockchainSimulator {
         );
 
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
-        let task_queue = PriorityQueue::<Task, i64>::new();
+        let event_queue = PriorityQueue::<Event, i64>::new();
         let rng = StdRng::seed_from_u64(seed);
 
         Ok(Self {
@@ -134,18 +132,18 @@ impl BlockchainSimulator {
             rng,
             protocol,
             csv,
-            task_queue,
+            event_queue,
         })
     }
 
-    fn enqueue_task(&mut self, task: Task) {
+    fn enqueue_event(&mut self, task: Event) {
         let time = task.time();
         // PriorityQueueは最大キューなので符号反転する
-        self.task_queue.push(task, -time);
+        self.event_queue.push(task, -time);
     }
 
-    fn pop_task(&mut self) -> Option<Task> {
-        self.task_queue.pop().map(|(task, _)| task)
+    fn pop_event(&mut self) -> Option<Event> {
+        self.event_queue.pop().map(|(task, _)| task)
     }
 
     fn propagation_time(&self, from: usize, to: usize) -> i64 {
@@ -183,13 +181,13 @@ impl BlockchainSimulator {
         // アクションの完了時間にタスクがエンキューされる
         let base_time = self.current_time;
         for action in actions {
-            let mut task_type = match action {
-                Action::Propagate { block_id, to } => TaskType::Propagation {
+            let mut event_type = match action {
+                Action::Propagate { block_id, to } => EventType::Propagation {
                     from: node_id,
                     to: *to,
                     block_id: *block_id,
                 },
-                Action::RestartMining { prev_block_id } => TaskType::BlockGeneration {
+                Action::RestartMining { prev_block_id } => EventType::BlockGeneration {
                     minter: node_id,
                     prev_block_id: *prev_block_id,
                     // Dummy. We set it to proper value at the end of the function.
@@ -197,8 +195,8 @@ impl BlockchainSimulator {
                 },
             };
 
-            match task_type {
-                TaskType::BlockGeneration {
+            match event_type {
+                EventType::BlockGeneration {
                     minter,
                     prev_block_id,
                     block_id: _,
@@ -219,16 +217,16 @@ impl BlockchainSimulator {
                     self.nodes[minter].set_next_mining_time(Some(next_mining_time));
 
                     // すでにキューにある同じノードのマイニングタスクを削除
-                    self.task_queue.retain(|task, _| {
-                        let TaskType::BlockGeneration {
-                            minter: task_minter,
+                    self.event_queue.retain(|task, _| {
+                        let EventType::BlockGeneration {
+                            minter: event_minter,
                             prev_block_id: _,
                             block_id: _,
-                        } = task.task_type()
+                        } = task.event_type()
                         else {
                             return true;
                         };
-                        *task_minter != node_id
+                        *event_minter != node_id
                     });
 
                     // ブロックを作成
@@ -243,26 +241,26 @@ impl BlockchainSimulator {
                         self.current_time - mining_base_block.time(),
                     );
 
-                    let TaskType::BlockGeneration {
+                    let EventType::BlockGeneration {
                         minter: _,
                         prev_block_id: _,
                         block_id,
-                    } = &mut task_type
+                    } = &mut event_type
                     else {
-                        unreachable!("task_type should be BlockGeneration");
+                        unreachable!("event_type should be BlockGeneration");
                     };
                     *block_id = new_block.id();
-                    self.enqueue_task(Task::new(next_mining_time, task_type));
+                    self.enqueue_event(Event::new(next_mining_time, event_type));
                     self.blockchain.add_block(new_block);
                 }
-                TaskType::Propagation {
+                EventType::Propagation {
                     from,
                     to,
                     block_id: _,
                 } => {
                     let prop_delay = self.propagation_time(from, to);
-                    let task_time = base_time + prop_delay;
-                    self.enqueue_task(Task::new(task_time, task_type));
+                    let event_time = base_time + prop_delay;
+                    self.enqueue_event(Event::new(event_time, event_type));
                 }
             }
         }
@@ -276,25 +274,20 @@ impl BlockchainSimulator {
             self.enqueue_actions(node_id, &actions);
         }
 
-        while !self.task_queue.is_empty() && self.current_round < self.end_round {
-            let current_task = self.pop_task().expect("Task queue should not be empty");
-            self.current_time = current_task.time();
+        while !self.event_queue.is_empty() && self.current_round < self.end_round {
+            let current_event = self.pop_event().expect("Task queue should not be empty");
+            self.current_time = current_event.time();
 
-            match current_task.task_type() {
-                TaskType::BlockGeneration {
+            match current_event.event_type() {
+                EventType::BlockGeneration {
                     minter,
                     prev_block_id: _,
                     block_id,
                 } => {
-                    // 現在のマイニングタスクかチェック
-                    if let Some(task_time) = self.nodes[*minter].next_mining_time() {
-                        if task_time != current_task.time() {
-                            continue;
-                        }
-                    } else {
-                        // unreachable??
-                        continue;
-                    }
+                    let Some(event_time) = self.nodes[*minter].next_mining_time() else {
+                        panic!("Node {} has no next mining time", *minter);
+                    };
+                    debug_assert_eq!(event_time, current_event.time());
 
                     let new_block = self.blockchain.get_block(*block_id).unwrap();
 
@@ -322,7 +315,7 @@ impl BlockchainSimulator {
                     self.enqueue_actions(*minter, &actions);
                 }
 
-                TaskType::Propagation { from, to, block_id } => {
+                EventType::Propagation { from, to, block_id } => {
                     log::trace!(
                         "🚚 time: {}, {}->{}, height: {}",
                         self.current_time,

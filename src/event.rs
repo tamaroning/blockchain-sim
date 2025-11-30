@@ -1,14 +1,13 @@
 use std::cmp::Ordering;
 
-/// TODO: Eventに名前変更
 #[derive(Clone, Debug, Hash)]
-pub struct Task {
+pub struct Event {
     time: i64,
-    ty: TaskType,
+    ty: EventType,
 }
 
-impl Task {
-    pub fn new(time: i64, ty: TaskType) -> Self {
+impl Event {
+    pub fn new(time: i64, ty: EventType) -> Self {
         Self { time, ty }
     }
 
@@ -16,21 +15,21 @@ impl Task {
         self.time
     }
 
-    pub fn task_type(&self) -> &TaskType {
+    pub fn event_type(&self) -> &EventType {
         &self.ty
     }
 
     pub fn is_block_generation(&self) -> bool {
-        matches!(self.ty, TaskType::BlockGeneration { .. })
+        matches!(self.ty, EventType::BlockGeneration { .. })
     }
 
     pub fn is_propagation(&self) -> bool {
-        matches!(self.ty, TaskType::Propagation { .. })
+        matches!(self.ty, EventType::Propagation { .. })
     }
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
-pub enum TaskType {
+pub enum EventType {
     BlockGeneration {
         minter: usize,
         prev_block_id: usize,
@@ -43,21 +42,21 @@ pub enum TaskType {
     },
 }
 
-impl Eq for Task {}
+impl Eq for Event {}
 
-impl PartialEq for Task {
+impl PartialEq for Event {
     fn eq(&self, other: &Self) -> bool {
         self.time == other.time
     }
 }
 
-impl Ord for Task {
+impl Ord for Event {
     fn cmp(&self, other: &Self) -> Ordering {
         other.time.cmp(&self.time) // 逆順（最小ヒープにするため）
     }
 }
 
-impl PartialOrd for Task {
+impl PartialOrd for Event {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
