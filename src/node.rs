@@ -14,7 +14,7 @@ impl Node {
         Self::new_with_strategy(
             id,
             hashrate,
-            Box::new(crate::mining_strategy::HonestMiningStrategy),
+            Box::new(crate::mining_strategy::HonestMiningStrategy::default()),
         )
     }
 

@@ -35,8 +35,7 @@ pub struct NodeProfile {
 ///     {
 ///       "hashrate": 1500,
 ///       "strategy": {
-///         "type": "k_lead_selfish_mining",
-///         "k": 2
+///         "type": "selfish"
 ///       }
 ///     }
 ///   ]

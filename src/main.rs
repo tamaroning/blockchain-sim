@@ -105,8 +105,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // CSVにmainchainのブロックを出力
     // round,difficulty,time
     if let Some(csv) = &mut simulator.csv {
-        for block in simulator.blockchain.get_main_chain() {
-            let block = simulator.blockchain.get_block(block).unwrap();
+        for block in simulator.env.blockchain.get_main_chain() {
+            let block = simulator.env.blockchain.get_block(block).unwrap();
             let record = blockchain_sim::types::Record {
                 round: block.height() as u32,
                 difficulty: block.difficulty(),

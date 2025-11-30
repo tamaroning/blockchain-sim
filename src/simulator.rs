@@ -12,16 +12,21 @@ use rand_distr::Exp;
 
 pub struct Env {
     // Configuration
+    /// The number of nodes.
     pub num_nodes: usize,
+    /// The delay time for block propagation.
     pub delay: i64,
+    /// The generation time for block mining.
     pub generation_time: i64,
+
     // Current environments
-    // TODO:
+    /// A instance of the blockchain.
+    pub blockchain: Blockchain,
 }
 
 pub struct BlockchainSimulator {
     /// Configuration of the simulation.
-    env: Env,
+    pub env: Env,
     /// A priority queue for events.
     event_queue: PriorityQueue<Event, i64>,
     /// Maximum height of the blocks created.
@@ -35,8 +40,6 @@ pub struct BlockchainSimulator {
     total_hashrate: i64,
     /// The maximum round to simulate.
     end_round: i64,
-    /// A instance of the blockchain.
-    pub blockchain: Blockchain,
     /// A protocol used.
     protocol: Box<dyn Protocol>,
     /// The tie-breaking rule to use.
@@ -81,6 +84,7 @@ impl BlockchainSimulator {
                 num_nodes,
                 delay,
                 generation_time,
+                blockchain: Blockchain::new(),
             },
             current_round: 0,
             current_time: 0,
@@ -88,7 +92,6 @@ impl BlockchainSimulator {
             nodes,
             total_hashrate,
             end_round,
-            blockchain: Blockchain::new(),
             rng,
             protocol,
             csv,
@@ -130,6 +133,7 @@ impl BlockchainSimulator {
                 num_nodes: profile.num_nodes(),
                 delay,
                 generation_time,
+                blockchain: Blockchain::new(),
             },
             current_round: 0,
             current_time: 0,
@@ -137,7 +141,6 @@ impl BlockchainSimulator {
             nodes,
             total_hashrate,
             end_round,
-            blockchain: Blockchain::new(),
             rng,
             protocol,
             csv,
@@ -184,7 +187,7 @@ impl BlockchainSimulator {
                     prev_block_id,
                     block_id: _,
                 } => {
-                    let mining_base_block = self.blockchain.get_block(prev_block_id).unwrap();
+                    let mining_base_block = self.env.blockchain.get_block(prev_block_id).unwrap();
 
                     // Difficulty adjustment
                     let new_difficulty = self.calculate_new_difficulty(mining_base_block);
@@ -216,7 +219,7 @@ impl BlockchainSimulator {
                         minter as i32,
                         self.current_time,
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
-                        self.blockchain.next_block_id(),
+                        self.env.blockchain.next_block_id(),
                         new_difficulty,
                         self.current_time - mining_base_block.time(),
                     );
@@ -231,7 +234,7 @@ impl BlockchainSimulator {
                     };
                     *block_id = new_block.id();
                     self.enqueue_event(Event::new(next_mining_time, event_type));
-                    self.blockchain.add_block(new_block);
+                    self.env.blockchain.add_block(new_block);
                 }
                 EventType::Propagation {
                     from,
@@ -264,12 +267,11 @@ impl BlockchainSimulator {
                     prev_block_id: _,
                     block_id,
                 } => {
-                    let new_block = self.blockchain.get_block(*block_id).unwrap();
+                    let new_block = self.env.blockchain.get_block(*block_id).unwrap();
 
                     // コールバックを呼び出してタスクをスケジュール
-                    let block = self.blockchain.get_block(*block_id).unwrap();
                     let actions = self.nodes[*minter].mining_strategy_mut().on_mining_block(
-                        block,
+                        *block_id,
                         self.current_time,
                         &self.env,
                         *minter,
@@ -296,13 +298,12 @@ impl BlockchainSimulator {
                         self.current_time,
                         from,
                         to,
-                        self.blockchain.get_block(*block_id).unwrap().height()
+                        self.env.blockchain.get_block(*block_id).unwrap().height()
                     );
 
                     // コールバックを呼び出してタスクをスケジュール
-                    let block = self.blockchain.get_block(*block_id).unwrap();
                     let actions = self.nodes[*to].mining_strategy_mut().on_receiving_block(
-                        block,
+                        *block_id,
                         self.current_time,
                         &self.env,
                         *to,
@@ -322,7 +323,7 @@ impl BlockchainSimulator {
 
     pub fn print_blockchain(&self) {
         log::info!("Blockchain:");
-        for block in self.blockchain.blocks() {
+        for block in self.env.blockchain.blocks() {
             log::info!(
                 "Block ID: {}, Difficulty: {}, Height: {}, Minter: {}, Time: {}, Prev Block ID: {:?}, Rand: {}",
                 block.id(),
@@ -341,7 +342,7 @@ impl BlockchainSimulator {
             parent_block,
             self.current_time,
             self.env.generation_time,
-            self.blockchain.blocks(),
+            self.env.blockchain.blocks(),
         )
     }
 
@@ -349,13 +350,16 @@ impl BlockchainSimulator {
         log::info!("Simulation Summary:");
         log::info!("- Current time: {}", self.current_time);
         log::info!("- Current round: {}", self.current_round);
-        log::info!("- Total blocks: {}", self.blockchain.len());
-        let main_chain_length = self.blockchain.max_height();
+        log::info!("- Total blocks: {}", self.env.blockchain.len());
+        let main_chain_length = self.env.blockchain.max_height();
         log::info!("- Main chain length: {}", main_chain_length);
         // diffculty
         log::info!(
             "Difficulty: {}",
-            self.blockchain.last_block().map_or(0.0, |b| b.difficulty())
+            self.env
+                .blockchain
+                .last_block()
+                .map_or(0.0, |b| b.difficulty())
         );
         log::info!(
             "- Avg. time/block: {}",
@@ -370,13 +374,13 @@ impl BlockchainSimulator {
     /// メインチェーンをトラバーサルして報酬を計算し、mining fairnessを表示する
     /// mining fairness = rewardのシェア / hashrateのシェア
     pub fn print_mining_fairness(&self) {
-        let main_chain = self.blockchain.get_main_chain();
+        let main_chain = self.env.blockchain.get_main_chain();
 
         // 各ノードの報酬をカウント（ジェネシスブロックを除く）
         let mut rewards: Vec<f64> = vec![0.0; self.nodes.len()];
 
         for &block_id in &main_chain {
-            if let Some(block) = self.blockchain.get_block(block_id) {
+            if let Some(block) = self.env.blockchain.get_block(block_id) {
                 let minter = block.minter();
                 if minter >= 0 {
                     let node_id = minter as usize;

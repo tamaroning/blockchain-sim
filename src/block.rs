@@ -1,3 +1,5 @@
+pub const GENESIS_BLOCK_ID: usize = 0;
+
 /// ブロックを表す構造体
 #[derive(Clone, Debug)]
 pub struct Block {
@@ -43,7 +45,7 @@ impl Block {
             minter: -1,
             time: 0,
             rand: 0,
-            id: 0,
+            id: GENESIS_BLOCK_ID,
             difficulty: 1.0,
             mining_time: 0,
         }
