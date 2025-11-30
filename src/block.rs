@@ -77,4 +77,3 @@ impl Block {
         self.rand
     }
 }
-

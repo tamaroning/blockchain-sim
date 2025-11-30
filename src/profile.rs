@@ -101,7 +101,7 @@ mod tests {
                 },
                 NodeProfile {
                     hashrate: 2000,
-                    strategy: MiningStrategyEnum::KLeadSelfishMining { k: 2 },
+                    strategy: MiningStrategyEnum::Selfish,
                 },
             ],
         };
@@ -113,6 +113,6 @@ mod tests {
         assert_eq!(deserialized.nodes.len(), 2);
         assert_eq!(deserialized.nodes[0].hashrate, 1000);
         assert_eq!(deserialized.nodes[1].hashrate, 2000);
-        assert_eq!(deserialized.nodes[1].strategy, MiningStrategyEnum::KLeadSelfishMining { k: 2 });
+        assert_eq!(deserialized.nodes[1].strategy, MiningStrategyEnum::Selfish);
     }
 }

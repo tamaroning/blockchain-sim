@@ -52,14 +52,13 @@ impl Protocol for BitcoinProtocol {
                 as f64
                 / (parent_height - height) as f64;
             let ratio = average_generation_time / generation_time as f64;
-            let d = if ratio < 0.5 {
+            if ratio < 0.5 {
                 parent_difficulty * 0.25
             } else if ratio > 2.0 {
                 parent_difficulty * 4.
             } else {
                 parent_difficulty / ratio
-            };
-            d
+            }
         } else {
             parent_difficulty
         }
@@ -87,7 +86,7 @@ impl Protocol for EthereumProtocol {
         let grand_parent_block_id = parent_block.prev_block_id().unwrap();
         let grand_parent_block = &blocks[grand_parent_block_id];
 
-        let time_diff = (parent_block.time() - grand_parent_block.time()) / 1000_000; // us to s
+        let time_diff = (parent_block.time() - grand_parent_block.time()) / 1_000_000; // us to s
         let adjustment_factor = (1 - (time_diff / 10)).max(-99);
         let difficulty_adjustment = parent_block.difficulty() / 2048. * adjustment_factor as f64;
 

@@ -44,7 +44,8 @@ impl Blockchain {
     }
 
     pub fn next_block_id(&self) -> usize {
-        self.next_block_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        self.next_block_id
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
     }
 
     pub fn last_block(&self) -> Option<&Block> {
@@ -89,4 +90,3 @@ impl Blockchain {
         chain
     }
 }
-

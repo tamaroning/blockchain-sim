@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+/// TODO: Eventに名前変更
 #[derive(Clone, Debug, Hash)]
 pub struct Task {
     time: i64,
@@ -32,6 +33,8 @@ impl Task {
 pub enum TaskType {
     BlockGeneration {
         minter: usize,
+        prev_block_id: usize,
+        block_id: usize,
     },
     Propagation {
         from: usize,
@@ -59,4 +62,3 @@ impl PartialOrd for Task {
         Some(self.cmp(other))
     }
 }
-

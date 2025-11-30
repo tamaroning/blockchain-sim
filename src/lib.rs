@@ -11,7 +11,7 @@ pub mod types;
 pub use block::Block;
 pub use blockchain::Blockchain;
 pub use mining_strategy::{
-    HonestMiningStrategy, KLeadSelfishMiningStrategy, MiningStrategy, MiningStrategyEnum,
+    HonestMiningStrategy, MiningStrategy, MiningStrategyEnum, SelfishMiningStrategy,
 };
 pub use node::Node;
 pub use profile::{NetworkProfile, NodeProfile};

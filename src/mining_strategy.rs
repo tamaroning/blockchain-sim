@@ -1,5 +1,12 @@
-use crate::task::{Task, TaskType};
+use crate::simulator::Env;
 use serde::{Deserialize, Serialize};
+
+pub enum Action {
+    /// Propagate a block to a node.
+    Propagate { block_id: usize, to: usize },
+    /// Reschedule a mining task.
+    RestartMining { prev_block_id: usize },
+}
 
 /// マイニング戦略のトレイト
 pub trait MiningStrategy: Send + Sync {
@@ -12,14 +19,9 @@ pub trait MiningStrategy: Send + Sync {
         &mut self,
         _block_id: usize,
         _current_time: i64,
-        _next_mining_time: i64,
+        _env: &Env,
         _node_id: usize,
-        _num_nodes: usize,
-        _delay: i64,
-        _private_chain_height: i64,
-        _public_chain_height: i64,
-    ) -> Vec<Task> {
-        // デフォルト実装：空のリストを返す
+    ) -> Vec<Action> {
         Vec::new()
     }
 
@@ -33,16 +35,9 @@ pub trait MiningStrategy: Send + Sync {
         &mut self,
         _block_id: usize,
         _current_time: i64,
-        _next_mining_time: i64,
+        _env: &Env,
         _node_id: usize,
-        _num_nodes: usize,
-        _delay: i64,
-        _private_chain_height: Option<i64>,
-        _public_chain_height: i64,
-        _private_tip_id: Option<usize>,
-        _private_chain_blocks: Vec<usize>,
-    ) -> Vec<Task> {
-        // デフォルト実装：空のリストを返す
+    ) -> Vec<Action> {
         Vec::new()
     }
 }
@@ -59,180 +54,76 @@ impl MiningStrategy for HonestMiningStrategy {
     fn on_mining_block(
         &mut self,
         block_id: usize,
-        current_time: i64,
-        next_mining_time: i64,
+        _current_time: i64,
+        env: &Env,
         node_id: usize,
-        num_nodes: usize,
-        delay: i64,
-        _private_chain_height: i64,
-        _public_chain_height: i64,
-    ) -> Vec<Task> {
-        let mut tasks = Vec::new();
+    ) -> Vec<Action> {
+        let mut actions = Vec::new();
 
         // 即座に propagation task をスケジュール（すべての他ノードに）
-        for i in 0..num_nodes {
+        for i in 0..env.num_nodes {
             if i != node_id {
-                let prop_time = current_time + delay;
-                tasks.push(Task::new(
-                    prop_time,
-                    TaskType::Propagation {
-                        from: node_id,
-                        to: i,
-                        block_id,
-                    },
-                ));
+                actions.push(Action::Propagate { block_id, to: i });
             }
         }
 
         // 次の mining task をスケジュール
-        tasks.push(Task::new(
-            next_mining_time,
-            TaskType::BlockGeneration { minter: node_id },
-        ));
-
-        tasks
+        actions.push(Action::RestartMining {
+            prev_block_id: block_id,
+        });
+        actions
     }
 
     fn on_receiving_block(
         &mut self,
-        _block_id: usize,
+        block_id: usize,
         _current_time: i64,
-        next_mining_time: i64,
-        node_id: usize,
-        _num_nodes: usize,
-        _delay: i64,
-        _private_chain_height: Option<i64>,
-        _public_chain_height: i64,
-        _private_tip_id: Option<usize>,
-        _private_chain_blocks: Vec<usize>,
-    ) -> Vec<Task> {
-        // 正直マイナーは受信時に特別な公開制御は行わず、
-        // 単に次の採掘を続けるだけとする。
-        vec![Task::new(
-            next_mining_time,
-            TaskType::BlockGeneration { minter: node_id },
-        )]
+        _env: &Env,
+        _node_id: usize,
+    ) -> Vec<Action> {
+        vec![Action::RestartMining {
+            prev_block_id: block_id,
+        }]
     }
 }
 
-/// k-lead selfish mining 戦略
-///
-/// モデル（この実装で採用する方針）
-///
-/// - リード: L := private_chain_height - public_chain_height_before
-/// - 採掘時 (on_mining_block):
-///     - 新しく掘ったブロックは常にプライベートに保持し、即時公開はしない。
-///     - つまり「採掘時は常に非公開」。
-/// - 受信時 (on_receiving_block):
-///     - L <= 0:
-///         - リードなし／負けているので公開しない（攻撃リセット相当）
-///     - L == 1:
-///         - 1 ブロック公開して 1 vs 1 のフォーク勝負に持ち込む
-///     - 1 < L <= k:
-///         - 何も公開せず、そのままリードを維持（受信により L は 1 減る想定）
-///     - L > k:
-///         - (L - k) 個の古いプライベートブロックを公開し、
-///           プライベートリードが概ね k 程度になるよう調整する
+// Selfish mining strategy
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KLeadSelfishMiningStrategy {
-    /// 許容する最大リード（目標値）
-    pub k: i64,
-}
+pub struct SelfishMiningStrategy;
 
-impl KLeadSelfishMiningStrategy {
-    pub fn new(k: i64) -> Self {
-        Self { k }
-    }
-}
-
-impl MiningStrategy for KLeadSelfishMiningStrategy {
+impl MiningStrategy for SelfishMiningStrategy {
     fn name(&self) -> &'static str {
-        "KLeadSelfishMining"
+        "Selfish"
     }
 
     fn on_mining_block(
         &mut self,
-        _block_id: usize,
+        block_id: usize,
         _current_time: i64,
-        next_mining_time: i64,
-        node_id: usize,
-        _num_nodes: usize,
-        _delay: i64,
-        _private_chain_height: i64,
-        _public_chain_height: i64,
-    ) -> Vec<Task> {
-        // 採掘時は常に非公開。
-        vec![Task::new(
-            next_mining_time,
-            TaskType::BlockGeneration { minter: node_id },
-        )]
+        _env: &Env,
+        _node_id: usize,
+    ) -> Vec<Action> {
+        // Mining block is always private.
+        vec![Action::RestartMining {
+            prev_block_id: block_id,
+        }]
     }
 
     fn on_receiving_block(
         &mut self,
-        _block_id: usize,
-        current_time: i64,
-        next_mining_time: i64,
-        node_id: usize,
-        num_nodes: usize,
-        delay: i64,
-        private_chain_height: Option<i64>,
-        public_chain_height_before: i64,
-        _private_tip_id: Option<usize>,
-        private_chain_blocks: Vec<usize>,
-    ) -> Vec<Task> {
-        let mut tasks = Vec::new();
+        block_id: usize,
+        _current_time: i64,
+        _env: &Env,
+        _node_id: usize,
+    ) -> Vec<Action> {
+        let mut actions = Vec::new();
 
-        if let Some(private_height) = private_chain_height {
-            // 受信前のリード L = private - public_before
-            let lead_before = private_height - public_chain_height_before;
+        // TODO: 公開制御を実装
 
-            // 公開するブロック数を決定
-            let num_blocks_to_publish: usize = if lead_before <= 0 {
-                // L <= 0: そもそもリードがないので公開しない（攻撃失敗・リセット）
-                0
-            } else if lead_before == 1 {
-                // L = 1: 1 ブロック公開して 1 vs 1 のフォーク勝負に持ち込む
-                1
-            } else if lead_before <= self.k {
-                // 1 < L <= k: 許容リード内なので公開しない（L は 1 減ってもまだ >0）
-                0
-            } else {
-                // L > k: 超過分 (L - k) を公開し、リードを概ね k に戻す
-                (lead_before - self.k) as usize
-            };
-
-            // 指定された数のブロックを公開（古い順に）
-            let blocks_to_publish: Vec<usize> = private_chain_blocks
-                .iter()
-                .take(num_blocks_to_publish)
-                .copied()
-                .collect();
-
-            for (idx, &block_id) in blocks_to_publish.iter().enumerate() {
-                for i in 0..num_nodes {
-                    if i != node_id {
-                        let publish_time = current_time + delay + idx as i64;
-                        tasks.push(Task::new(
-                            publish_time,
-                            TaskType::Propagation {
-                                from: node_id,
-                                to: i,
-                                block_id,
-                            },
-                        ));
-                    }
-                }
-            }
-        }
-
-        // 次の mining task をスケジュール（常に）
-        tasks.push(Task::new(
-            next_mining_time,
-            TaskType::BlockGeneration { minter: node_id },
-        ));
-
-        tasks
+        actions.push(Action::RestartMining {
+            prev_block_id: block_id,
+        });
+        actions
     }
 }
 
@@ -241,7 +132,7 @@ impl MiningStrategy for KLeadSelfishMiningStrategy {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MiningStrategyEnum {
     Honest,
-    KLeadSelfishMining { k: i64 },
+    Selfish,
 }
 
 impl MiningStrategyEnum {
@@ -249,9 +140,7 @@ impl MiningStrategyEnum {
     pub fn to_strategy(&self) -> Box<dyn MiningStrategy> {
         match self {
             MiningStrategyEnum::Honest => Box::new(HonestMiningStrategy),
-            MiningStrategyEnum::KLeadSelfishMining { k } => {
-                Box::new(KLeadSelfishMiningStrategy::new(*k))
-            }
+            MiningStrategyEnum::Selfish => Box::new(SelfishMiningStrategy),
         }
     }
 }
