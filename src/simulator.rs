@@ -168,11 +168,17 @@ impl BlockchainSimulator {
         let base_time = self.current_time;
         for action in actions {
             let mut event_type = match action {
-                Action::Propagate { block_id, to } => EventType::Propagation {
-                    from: node_id,
-                    to: *to,
-                    block_id: *block_id,
-                },
+                Action::Propagate { block_id, to } => {
+                    // Avoid self-propagation.
+                    if node_id == *to {
+                        continue;
+                    }
+                    EventType::Propagation {
+                        from: node_id,
+                        to: *to,
+                        block_id: *block_id,
+                    }
+                }
                 Action::RestartMining { prev_block_id } => EventType::BlockGeneration {
                     minter: node_id,
                     prev_block_id: *prev_block_id,

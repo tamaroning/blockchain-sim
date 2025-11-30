@@ -1,6 +1,24 @@
 use crate::{block::GENESIS_BLOCK_ID, simulator::Env};
 use serde::{Deserialize, Serialize};
 
+fn longest_chain(env: &Env, block1_id: usize, block2_id: usize) -> usize {
+    let block1 = env.blockchain.get_block(block1_id).unwrap();
+    let block2 = env.blockchain.get_block(block2_id).unwrap();
+    let height1 = block1.height();
+    let height2 = block2.height();
+    if height1 >= height2 {
+        block1_id
+    } else if height1 < height2 {
+        block2_id
+    } else {
+        if block1.rand() > block2.rand() {
+            block1_id
+        } else {
+            block2_id
+        }
+    }
+}
+
 pub enum Action {
     /// Propagate a block to a node.
     Propagate { block_id: usize, to: usize },
@@ -62,15 +80,13 @@ impl MiningStrategy for HonestMiningStrategy {
         block_id: usize,
         _current_time: i64,
         env: &Env,
-        node_id: usize,
+        _node_id: usize,
     ) -> Vec<Action> {
         let mut actions = Vec::new();
 
         // Immediately schedule propagation tasks to all other nodes.
         for node in 0..env.num_nodes {
-            if node != node_id {
-                actions.push(Action::Propagate { block_id, to: node });
-            }
+            actions.push(Action::Propagate { block_id, to: node });
         }
 
         // Schedule a new mining task.
@@ -87,19 +103,17 @@ impl MiningStrategy for HonestMiningStrategy {
         env: &Env,
         _node_id: usize,
     ) -> Vec<Action> {
-        let incoming_block_height = env.blockchain.get_block(block_id).unwrap().height();
-        let my_chain_height = env
-            .blockchain
-            .get_block(self.current_block_id)
-            .unwrap()
-            .height();
+        let old_chain = self.current_block_id;
+        self.current_block_id = longest_chain(env, self.current_block_id, block_id);
 
-        if incoming_block_height > my_chain_height {
-            vec![Action::RestartMining {
-                prev_block_id: block_id,
-            }]
-        } else {
+        if old_chain == self.current_block_id {
+            // If the chain is not changed, continue mining.
             vec![]
+        } else {
+            // If the chain is changed, restart mining.
+            vec![Action::RestartMining {
+                prev_block_id: self.current_block_id,
+            }]
         }
     }
 }
@@ -224,21 +238,25 @@ impl MiningStrategy for SelfishMiningStrategy {
             .height();
         let delta_prev = private_chain_height - public_chain_height;
 
-        println!("block_height: {}", env.blockchain.get_block(block_id).unwrap().height());
+        println!(
+            "block_height: {:?}",
+            env.blockchain.get_block(block_id).unwrap().height()
+        );
         println!(
             "private_chain_height: {}, public_chain_height: {}, delta_prev: {}",
             private_chain_height, public_chain_height, delta_prev
         );
 
         // update the public chain if the incoming block is longer than the known public chain.
-        if env.blockchain.get_block(block_id).unwrap().height() > public_chain_height {
-            self.public_chain = block_id;
-        }
+        self.public_chain = longest_chain(env, self.public_chain, block_id);
 
-        if delta_prev == 0 {
+        if delta_prev <= 0 {
             // they win.
             self.private_chain = self.public_chain;
             self.private_branch_len = 0;
+            actions.push(Action::RestartMining {
+                prev_block_id: self.public_chain,
+            });
         } else if delta_prev == 1 {
             // publish the last block of the private chain.
             // Now the same length. Try our luck.
@@ -271,10 +289,6 @@ impl MiningStrategy for SelfishMiningStrategy {
                 });
             }
         }
-
-        actions.push(Action::RestartMining {
-            prev_block_id: self.private_chain,
-        });
         actions
     }
 }
