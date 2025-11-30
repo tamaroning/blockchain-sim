@@ -213,9 +213,6 @@ impl BlockchainSimulator {
                             / self.nodes[minter].hashrate() as f64
                             * self.total_hashrate as f64) as i64;
 
-                    // ノードのnext_mining_timeを更新
-                    self.nodes[minter].set_next_mining_time(Some(next_mining_time));
-
                     // すでにキューにある同じノードのマイニングタスクを削除
                     self.event_queue.retain(|task, _| {
                         let EventType::BlockGeneration {
@@ -284,11 +281,6 @@ impl BlockchainSimulator {
                     prev_block_id: _,
                     block_id,
                 } => {
-                    let Some(event_time) = self.nodes[*minter].next_mining_time() else {
-                        panic!("Node {} has no next mining time", *minter);
-                    };
-                    debug_assert_eq!(event_time, current_event.time());
-
                     let new_block = self.blockchain.get_block(*block_id).unwrap();
 
                     // コールバックを呼び出してタスクをスケジュール

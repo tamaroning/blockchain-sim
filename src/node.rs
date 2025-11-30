@@ -5,7 +5,6 @@ pub struct Node {
     id: usize,
     hashrate: i64,
     current_block_id: usize,
-    next_mining_time: Option<i64>,
     mining_strategy: Box<dyn MiningStrategy>,
 }
 
@@ -27,7 +26,6 @@ impl Node {
             id,
             hashrate,
             current_block_id: 0, // ジェネシスブロック
-            next_mining_time: None,
             mining_strategy,
         }
     }
@@ -48,17 +46,8 @@ impl Node {
         self.current_block_id = block_id;
     }
 
-    pub fn next_mining_time(&self) -> Option<i64> {
-        self.next_mining_time
-    }
-
-    pub fn set_next_mining_time(&mut self, time: Option<i64>) {
-        self.next_mining_time = time;
-    }
-
     pub fn reset(&mut self) {
         self.current_block_id = 0;
-        self.next_mining_time = None;
     }
 
     pub fn mining_strategy(&self) -> &dyn MiningStrategy {
