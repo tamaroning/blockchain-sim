@@ -11,9 +11,14 @@ use rand::prelude::*;
 use rand_distr::Exp;
 
 pub struct Env {
+    // Configuration
+
     pub num_nodes: usize,
     pub delay: i64,
     pub generation_time: i64,
+
+    // Current environments
+    // TODO:
 }
 
 pub struct BlockchainSimulator {
@@ -294,8 +299,9 @@ impl BlockchainSimulator {
                     let new_block = self.blockchain.get_block(*block_id).unwrap();
 
                     // コールバックを呼び出してタスクをスケジュール
+                    let block = self.blockchain.get_block(*block_id).unwrap();
                     let actions = self.nodes[*minter].mining_strategy_mut().on_mining_block(
-                        *block_id,
+                        block,
                         self.current_time,
                         &self.env,
                         *minter,
@@ -330,9 +336,9 @@ impl BlockchainSimulator {
                     self.choose_mainchain(*block_id, current_block_id, *from, *to);
 
                     // コールバックを呼び出してタスクをスケジュール
-                    // 受信前の公開チェーンの高さを渡す（リード計算に必要）
+                    let block = self.blockchain.get_block(*block_id).unwrap();
                     let actions = self.nodes[*to].mining_strategy_mut().on_receiving_block(
-                        *block_id,
+                        block,
                         self.current_time,
                         &self.env,
                         *to,

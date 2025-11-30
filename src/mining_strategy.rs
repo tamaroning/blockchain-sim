@@ -1,4 +1,4 @@
-use crate::simulator::Env;
+use crate::{Block, simulator::Env};
 use serde::{Deserialize, Serialize};
 
 pub enum Action {
@@ -17,7 +17,7 @@ pub trait MiningStrategy: Send + Sync {
     /// 返り値: スケジュールすべきタスクのリスト（propagation task と mining task）
     fn on_mining_block(
         &mut self,
-        _block_id: usize,
+        _block: &Block,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
@@ -33,7 +33,7 @@ pub trait MiningStrategy: Send + Sync {
     ///   「公開チェーンの高さより大きいブロックのみ」を古い順に並べたものを想定。
     fn on_receiving_block(
         &mut self,
-        _block_id: usize,
+        _block: &Block,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
@@ -53,12 +53,13 @@ impl MiningStrategy for HonestMiningStrategy {
 
     fn on_mining_block(
         &mut self,
-        block_id: usize,
+        block: &Block,
         _current_time: i64,
         env: &Env,
         node_id: usize,
     ) -> Vec<Action> {
         let mut actions = Vec::new();
+        let block_id = block.id();
 
         // 即座に propagation task をスケジュール（すべての他ノードに）
         for i in 0..env.num_nodes {
@@ -76,13 +77,13 @@ impl MiningStrategy for HonestMiningStrategy {
 
     fn on_receiving_block(
         &mut self,
-        block_id: usize,
+        block: &Block,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
     ) -> Vec<Action> {
         vec![Action::RestartMining {
-            prev_block_id: block_id,
+            prev_block_id: block.id(),
         }]
     }
 }
@@ -98,20 +99,20 @@ impl MiningStrategy for SelfishMiningStrategy {
 
     fn on_mining_block(
         &mut self,
-        block_id: usize,
+        block: &Block,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
     ) -> Vec<Action> {
         // Mining block is always private.
         vec![Action::RestartMining {
-            prev_block_id: block_id,
+            prev_block_id: block.id(),
         }]
     }
 
     fn on_receiving_block(
         &mut self,
-        block_id: usize,
+        block: &Block,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
@@ -121,7 +122,7 @@ impl MiningStrategy for SelfishMiningStrategy {
         // TODO: 公開制御を実装
 
         actions.push(Action::RestartMining {
-            prev_block_id: block_id,
+            prev_block_id: block.id(),
         });
         actions
     }
