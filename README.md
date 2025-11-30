@@ -13,8 +13,8 @@ Usage:
 # Run Ethereum protocol with 100 nodes for 10,000 rounds
 RUST_LOG="info" cargo run --release -- --end-round 10000 --protocol ethereum --num-nodes 100
 
-# Single k-lead selfish miner with 30% hash power
-RUST_LOG="info" cargo run --release -- --profile ../examples/single_attacker_30pct.json --end-round 1000000
+# Selfish mining experiment
+RUST_LOG="info" cargo run --release -- --profile examples/honest.json --end-round 1000000
 ```
 
 Evaluation:
