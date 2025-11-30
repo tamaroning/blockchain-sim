@@ -1,7 +1,7 @@
 use crate::block::Block;
 use std::sync::atomic::AtomicUsize;
 
-/// ブロックチェーンを管理する構造体
+/// A pool for blocks which maintains a single global instance of the blockchain.
 pub struct Blockchain {
     blocks: Vec<Block>,
     next_block_id: AtomicUsize,

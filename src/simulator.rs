@@ -20,22 +20,31 @@ pub struct Env {
 }
 
 pub struct BlockchainSimulator {
+    /// Configuration of the simulation.
     env: Env,
-    /// 作成された最大のブロックの高さ
-    current_round: i64,
-    current_time: i64,
-    tie: TieBreakingRule,
-    nodes: Vec<Node>,
-    total_hashrate: i64,
-    end_round: i64,
-    pub blockchain: Blockchain,
-    rng: StdRng,
-    protocol: Box<dyn Protocol>,
-    /// CSV出力用のライター
-    pub csv: Option<csv::Writer<std::fs::File>>,
-
-    /// タスクキュー
+    /// A priority queue for events.
     event_queue: PriorityQueue<Event, i64>,
+    /// Maximum height of the blocks created.
+    current_round: i64,
+    /// The current time of the simulation.
+    current_time: i64,
+    /// A list of nodes.
+    nodes: Vec<Node>,
+    /// The total hashrate of all nodes.
+    /// This matches to the sum of hashrates of all nodes.
+    total_hashrate: i64,
+    /// The maximum round to simulate.
+    end_round: i64,
+    /// A instance of the blockchain.
+    pub blockchain: Blockchain,
+    /// A protocol used.
+    protocol: Box<dyn Protocol>,
+    /// The tie-breaking rule to use.
+    tie: TieBreakingRule,
+    /// A random number generator.
+    rng: StdRng,
+    /// A writer for CSV output.
+    pub csv: Option<csv::Writer<std::fs::File>>,
 }
 
 impl BlockchainSimulator {
@@ -148,32 +157,6 @@ impl BlockchainSimulator {
 
     fn propagation_time(&self, from: usize, to: usize) -> i64 {
         if from == to { 0 } else { self.env.delay }
-    }
-
-    fn choose_mainchain(&mut self, block1_id: usize, block2_id: usize, _from: usize, to: usize) {
-        let block1 = self.blockchain.get_block(block1_id).unwrap();
-        let block2 = self.blockchain.get_block(block2_id).unwrap();
-
-        if block1.height() > block2.height() {
-            self.nodes[to].set_current_block_id(block1_id);
-            return;
-        }
-
-        if block1.height() == block2.height() {
-            if self.tie == TieBreakingRule::Random
-                && block2.minter() != to as i32
-                && block1.rand() < block2.rand()
-            {
-                self.nodes[to].set_current_block_id(block1_id);
-            }
-
-            if self.tie == TieBreakingRule::Time
-                && block2.minter() != to as i32
-                && block1.time() > block2.time()
-            {
-                self.nodes[to].set_current_block_id(block1_id);
-            }
-        }
     }
 
     pub fn enqueue_actions(&mut self, node_id: usize, actions: &[Action]) {
@@ -316,10 +299,6 @@ impl BlockchainSimulator {
                         self.blockchain.get_block(*block_id).unwrap().height()
                     );
 
-                    // 伝播されたブロックによってメインチェーンを更新
-                    let current_block_id = self.nodes[*to].current_block_id();
-                    self.choose_mainchain(*block_id, current_block_id, *from, *to);
-
                     // コールバックを呼び出してタスクをスケジュール
                     let block = self.blockchain.get_block(*block_id).unwrap();
                     let actions = self.nodes[*to].mining_strategy_mut().on_receiving_block(
@@ -331,14 +310,6 @@ impl BlockchainSimulator {
                     self.enqueue_actions(*to, &actions);
                 }
             }
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.current_round = 0;
-        self.current_time = 0;
-        for node in &mut self.nodes {
-            node.reset();
         }
     }
 

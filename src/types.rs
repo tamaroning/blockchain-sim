@@ -6,7 +6,6 @@ use serde::Serialize;
 pub enum TieBreakingRule {
     #[default]
     Longest,
-    Random,
     Time,
 }
 

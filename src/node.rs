@@ -2,9 +2,10 @@ use crate::mining_strategy::MiningStrategy;
 
 /// ノードを表す構造体
 pub struct Node {
+    /// The ID of the node.
     id: usize,
+    /// The hashrate of the node.
     hashrate: i64,
-    current_block_id: usize,
     mining_strategy: Box<dyn MiningStrategy>,
 }
 
@@ -25,7 +26,6 @@ impl Node {
         Self {
             id,
             hashrate,
-            current_block_id: 0, // ジェネシスブロック
             mining_strategy,
         }
     }
@@ -36,18 +36,6 @@ impl Node {
 
     pub fn hashrate(&self) -> i64 {
         self.hashrate
-    }
-
-    pub fn current_block_id(&self) -> usize {
-        self.current_block_id
-    }
-
-    pub fn set_current_block_id(&mut self, block_id: usize) {
-        self.current_block_id = block_id;
-    }
-
-    pub fn reset(&mut self) {
-        self.current_block_id = 0;
     }
 
     pub fn mining_strategy(&self) -> &dyn MiningStrategy {
