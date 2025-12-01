@@ -255,13 +255,9 @@ impl BlockchainSimulator {
         }
     }
 
-    /// シミュレーションを実行
+    /// Event loop.
     pub fn simulation(&mut self) {
-        // 初期マイニングタスクをスケジュール
-        for node_id in 0..self.nodes.len() {
-            let actions = vec![Action::RestartMining { prev_block_id: 0 }];
-            self.enqueue_actions(node_id, &actions);
-        }
+        self.enqueue_first_mining_task();
 
         while !self.event_queue.is_empty() && self.current_round < self.end_round {
             let current_event = self.pop_event().expect("Task queue should not be empty");
@@ -272,52 +268,65 @@ impl BlockchainSimulator {
                     minter,
                     prev_block_id: _,
                     block_id,
-                } => {
-                    let new_block = self.env.blockchain.get_block(*block_id).unwrap();
-
-                    // コールバックを呼び出してタスクをスケジュール
-                    let actions = self.nodes[*minter].mining_strategy_mut().on_mining_block(
-                        *block_id,
-                        self.current_time,
-                        &self.env,
-                        *minter,
-                    );
-
-                    if self.current_round < new_block.height() {
-                        self.current_round = new_block.height();
-                    }
-
-                    log::trace!(
-                        "📦 time: {}, minter: {}, difficulty: {}, height: {}",
-                        self.current_time,
-                        new_block.minter(),
-                        new_block.difficulty(),
-                        new_block.height()
-                    );
-
-                    self.enqueue_actions(*minter, &actions);
-                }
+                } => self.handle_block_generation(*minter, *block_id),
 
                 EventType::Propagation { from, to, block_id } => {
-                    log::trace!(
-                        "🚚 time: {}, {}->{}, height: {}",
-                        self.current_time,
-                        from,
-                        to,
-                        self.env.blockchain.get_block(*block_id).unwrap().height()
-                    );
-
-                    // コールバックを呼び出してタスクをスケジュール
-                    let actions = self.nodes[*to].mining_strategy_mut().on_receiving_block(
-                        *block_id,
-                        self.current_time,
-                        &self.env,
-                        *to,
-                    );
-                    self.enqueue_actions(*to, &actions);
+                    self.handle_propagation(*from, *to, *block_id)
                 }
             }
         }
+    }
+
+    fn enqueue_first_mining_task(&mut self) {
+        for node_id in 0..self.nodes.len() {
+            let actions = vec![Action::RestartMining { prev_block_id: 0 }];
+            self.enqueue_actions(node_id, &actions);
+        }
+    }
+
+    fn handle_block_generation(&mut self, minter: usize, block_id: usize) {
+        let new_block = self.env.blockchain.get_block(block_id).unwrap();
+
+        // コールバックを呼び出してタスクをスケジュール
+        let actions = self.nodes[minter].mining_strategy_mut().on_mining_block(
+            block_id,
+            self.current_time,
+            &self.env,
+            minter,
+        );
+
+        if self.current_round < new_block.height() {
+            self.current_round = new_block.height();
+        }
+
+        log::trace!(
+            "📦 time: {}, minter: {}, difficulty: {}, height: {}",
+            self.current_time,
+            new_block.minter(),
+            new_block.difficulty(),
+            new_block.height()
+        );
+
+        self.enqueue_actions(minter, &actions);
+    }
+
+    fn handle_propagation(&mut self, from: usize, to: usize, block_id: usize) {
+        // コールバックを呼び出してタスクをスケジュール
+        let actions = self.nodes[to].mining_strategy_mut().on_receiving_block(
+            block_id,
+            self.current_time,
+            &self.env,
+            to,
+        );
+        self.enqueue_actions(to, &actions);
+
+        log::trace!(
+            "🚚 time: {}, {}->{}, height: {}",
+            self.current_time,
+            from,
+            to,
+            self.env.blockchain.get_block(block_id).unwrap().height()
+        );
     }
 
     pub fn print_hashrates(&self) {
