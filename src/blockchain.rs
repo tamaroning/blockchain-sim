@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::block::{Block, GENESIS_BLOCK_ID};
+use crate::{Protocol, block::{Block, GENESIS_BLOCK_ID}};
 use std::sync::atomic::AtomicUsize;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -25,12 +25,12 @@ pub struct Blockchain {
 }
 
 impl Blockchain {
-    pub fn new() -> Self {
+    pub fn new(protocol: &dyn Protocol) -> Self {
         let mut blockchain = Self {
             blocks: Vec::new(),
             next_block_id: AtomicUsize::new(1),
         };
-        blockchain.add_block(Block::genesis());
+        blockchain.add_block(Block::genesis(protocol));
         blockchain
     }
 

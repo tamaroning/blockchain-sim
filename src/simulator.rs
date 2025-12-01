@@ -80,7 +80,7 @@ impl BlockchainSimulator {
                 num_nodes,
                 delay,
                 generation_time,
-                blockchain: Blockchain::new(),
+                blockchain: Blockchain::new(&*protocol),
             },
             current_round: 0,
             current_time: 0,
@@ -127,7 +127,7 @@ impl BlockchainSimulator {
                 num_nodes: profile.num_nodes(),
                 delay,
                 generation_time,
-                blockchain: Blockchain::new(),
+                blockchain: Blockchain::new(&*protocol),
             },
             current_round: 0,
             current_time: 0,
@@ -189,14 +189,17 @@ impl BlockchainSimulator {
                     let mining_base_block = self.env.blockchain.get_block(prev_block_id).unwrap();
 
                     // Difficulty adjustment
-                    let new_difficulty = self.calculate_new_difficulty(mining_base_block);
-                    let exp_dist = Exp::new(1.0).unwrap();
+                    let new_difficulty = self.protocol.calculate_difficulty(
+                        mining_base_block,
+                        self.current_time,
+                        &self.env,
+                    );
                     let next_mining_time = base_time
-                        + (exp_dist.sample(&mut self.rng)
-                            * self.env.generation_time as f64
-                            * new_difficulty
-                            / self.nodes[minter].hashrate() as f64
-                            * self.total_hashrate as f64) as i64;
+                        + self.protocol.calculate_generation_time(
+                            &mut self.rng,
+                            new_difficulty,
+                            self.nodes[minter].hashrate(),
+                        );
 
                     // すでにキューにある同じノードのマイニングタスクを削除
                     self.event_queue.retain(|task, _| {
@@ -208,7 +211,7 @@ impl BlockchainSimulator {
                         else {
                             return true;
                         };
-                        *event_minter != node_id
+                        *event_minter != minter
                     });
 
                     // ブロックを作成
@@ -222,6 +225,16 @@ impl BlockchainSimulator {
                         new_difficulty,
                         self.current_time - mining_base_block.time(),
                     );
+
+                    if new_difficulty != mining_base_block.difficulty() {
+                        log::debug!(
+                            "DAA: {} -> {} @ round {}, block ID: {}",
+                            mining_base_block.difficulty(),
+                            new_difficulty,
+                            mining_base_block.height(),
+                            new_block.id(),
+                        );
+                    }
 
                     let EventType::BlockGeneration {
                         minter: _,
@@ -295,7 +308,7 @@ impl BlockchainSimulator {
         }
 
         log::trace!(
-            "📦 time: {}, minter: {}, difficulty: {}, height: {}",
+            "📦 time: {}, minter: {}, difficulty: {:.4}, height: {}",
             self.current_time,
             new_block.minter(),
             new_block.difficulty(),
@@ -335,7 +348,7 @@ impl BlockchainSimulator {
         log::info!("Blockchain:");
         for block in self.env.blockchain.blocks() {
             log::info!(
-                "Block ID: {}, Difficulty: {}, Height: {}, Minter: {}, Time: {}, Prev Block ID: {:?}, Rand: {}",
+                "Block ID: {}, Difficulty: {:.4}, Height: {}, Minter: {}, Time: {}, Prev Block ID: {:?}, Rand: {}",
                 block.id(),
                 block.difficulty(),
                 block.height(),
@@ -347,11 +360,6 @@ impl BlockchainSimulator {
         }
     }
 
-    fn calculate_new_difficulty(&self, parent_block: &Block) -> f64 {
-        self.protocol
-            .calculate_difficulty(parent_block, self.current_time, &self.env)
-    }
-
     pub fn print_summary(&self) {
         log::info!("Simulation Summary:");
         log::info!("- Current time: {}", self.current_time);
@@ -361,7 +369,7 @@ impl BlockchainSimulator {
         log::info!("- Main chain length: {}", main_chain_length);
         // diffculty
         log::info!(
-            "Difficulty: {}",
+            "Difficulty: {:.4}",
             self.env
                 .blockchain
                 .last_block()

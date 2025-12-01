@@ -1,4 +1,4 @@
-use crate::blockchain::BlockId;
+use crate::{Protocol, blockchain::BlockId};
 
 pub const GENESIS_BLOCK_ID: BlockId = BlockId::new(0);
 
@@ -11,7 +11,7 @@ pub struct Block {
     time: i64,
     rand: i64,
     id: BlockId,
-    /// 大きいほど難しい。
+    /// Difficulty
     difficulty: f64,
     /// マイニングにかかった時間
     pub mining_time: i64,
@@ -40,7 +40,7 @@ impl Block {
         }
     }
 
-    pub fn genesis() -> Self {
+    pub fn genesis(protocol: &dyn Protocol) -> Self {
         Self {
             height: 0,
             prev_block_id: None,
@@ -48,7 +48,7 @@ impl Block {
             time: 0,
             rand: 0,
             id: GENESIS_BLOCK_ID,
-            difficulty: 1.0,
+            difficulty: protocol.default_difficulty(),
             mining_time: 0,
         }
     }

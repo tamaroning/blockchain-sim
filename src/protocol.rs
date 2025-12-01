@@ -1,20 +1,32 @@
 use crate::{block::Block, simulator::Env};
 use clap::ValueEnum;
+use rand::rngs::StdRng;
+use rand_distr::Distribution;
+use rand_distr::Exp;
 
 const BTC_DAA_EPOCH: i64 = 2016;
+/// BTCの目標生成時間 (ms)
+const BTC_TARGET_GENERATION_TIME: i64 = 600_000;
 
-/// プロトコルのトレイト定義
 pub trait Protocol: Send + Sync {
     fn name(&self) -> &'static str;
+    fn default_difficulty(&self) -> f64;
     fn calculate_difficulty(&self, parent_block: &Block, current_time: i64, env: &Env) -> f64;
+    fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64;
 }
 
-/// Bitcoinプロトコルの実装
+/// Bitcoin Protocol
+/// expected generation time = expected required hash / hashrate
+/// expected required hash = D * 2^32
 pub struct BitcoinProtocol;
 
 impl Protocol for BitcoinProtocol {
     fn name(&self) -> &'static str {
         "Bitcoin"
+    }
+
+    fn default_difficulty(&self) -> f64 {
+        1.
     }
 
     fn calculate_difficulty(&self, parent_block: &Block, current_time: i64, env: &Env) -> f64 {
@@ -24,37 +36,41 @@ impl Protocol for BitcoinProtocol {
 
         let new_height = parent_height + 1;
 
-        if new_height % BTC_DAA_EPOCH == 0 && new_height >= BTC_DAA_EPOCH {
-            let (first_block_in_epoch, height) = {
+        let new_difficulty = if new_height % BTC_DAA_EPOCH == 0 && new_height >= BTC_DAA_EPOCH {
+            let (first_block_in_epoch, first_block_in_epoch_height) = {
                 let mut block_id = parent_block_id;
-                let block = env.blockchain.get_block(block_id).unwrap();
-                for _ in 0..BTC_DAA_EPOCH {
-                    if let Some(prev_id) = block.prev_block_id() {
-                        block_id = prev_id;
-                    } else {
-                        break;
-                    }
+                let mut block = env.blockchain.get_block(block_id).unwrap();
+                for _ in 0..(BTC_DAA_EPOCH - 1) {
+                    block_id = block.prev_block_id().unwrap();
+                    block = env.blockchain.get_block(block_id).unwrap();
                 }
                 (block_id, block.height())
             };
             let first_block_in_epoch = env.blockchain.get_block(first_block_in_epoch).unwrap();
-            let average_generation_time = (current_time - first_block_in_epoch.time()) as f64
-                / (parent_height - height) as f64;
-            let ratio = average_generation_time / env.generation_time as f64;
-            if ratio < 0.5 {
-                parent_difficulty * 0.25
-            } else if ratio > 2.0 {
-                parent_difficulty * 4.
-            } else {
-                parent_difficulty / ratio
-            }
+            let average_generation_time =
+                (current_time - first_block_in_epoch.time()) as f64 / (BTC_DAA_EPOCH - 1) as f64;
+            let ratio = average_generation_time / BTC_TARGET_GENERATION_TIME as f64;
+            let ratio = ratio.max(0.25).min(4.0);
+
+            let new_difficulty = parent_difficulty / ratio;
+            new_difficulty
         } else {
             parent_difficulty
-        }
+        };
+
+        new_difficulty as f64
+    }
+
+    fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64 {
+        let exp_dist: Exp<f64> = Exp::new(1.0).unwrap();
+        let expected_hash = difficulty * 2f64.powi(32);
+        let exptected_generation_time = expected_hash as f64 / hashrate as f64;
+        (exp_dist.sample(rng) * exptected_generation_time) as i64
     }
 }
 
 /// Ethereumプロトコルの実装
+///  TODO: implement total difficulty (mainchain choosing)
 pub struct EthereumProtocol;
 
 impl Protocol for EthereumProtocol {
@@ -62,28 +78,35 @@ impl Protocol for EthereumProtocol {
         "Ethereum"
     }
 
+    fn default_difficulty(&self) -> f64 {
+        2f64.powi(32)
+    }
+
     fn calculate_difficulty(&self, parent_block: &Block, _current_time: i64, env: &Env) -> f64 {
         if parent_block.height() == 0 {
-            return 1.0;
+            return self.default_difficulty();
         }
         let grand_parent_block_id = parent_block.prev_block_id().unwrap();
         let grand_parent_block = env.blockchain.get_block(grand_parent_block_id).unwrap();
 
         let time_diff = (parent_block.time() - grand_parent_block.time()) / 1_000_000; // us to s
         let adjustment_factor = (1 - (time_diff / 10)).max(-99);
-        let difficulty_adjustment = parent_block.difficulty() / 2048. * adjustment_factor as f64;
+        let difficulty_adjustment = (parent_block.difficulty() / 2048.) as i64 * adjustment_factor;
 
-        let uncle_adjustment = 0.;
+        let uncle_adjustment = 0;
 
-        let new_difficulty = parent_block.difficulty() + difficulty_adjustment + uncle_adjustment;
-        if new_difficulty - parent_block.difficulty() > 1. {
+        let new_difficulty =
+            parent_block.difficulty() as i64 + difficulty_adjustment + uncle_adjustment;
+
+        /*
+        if new_difficulty - parent_block.difficulty() as i64 > 1 {
             log::error!(
                 "Difficulty adjustment error:
                 height: {},
-                parent_difficulty: {:.2},
-                new_difficulty: {:.2},
-                difficulty_adjustment: {:.2},
-                uncle_adjustment: {:.2}",
+                parent_difficulty: 0x{:x},
+                new_difficulty: 0x{:x},
+                difficulty_adjustment: 0x{:x},
+                uncle_adjustment: 0x{:x}",
                 parent_block.height() + 1,
                 parent_block.difficulty(),
                 new_difficulty,
@@ -91,7 +114,15 @@ impl Protocol for EthereumProtocol {
                 uncle_adjustment,
             );
         }
-        new_difficulty
+        */
+        new_difficulty as f64
+    }
+
+    fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64 {
+        let exp_dist: Exp<f64> = Exp::new(1.0).unwrap();
+        let expected_hash = difficulty;
+        let exptected_generation_time = expected_hash as f64 / hashrate as f64;
+        (exp_dist.sample(rng) * exptected_generation_time) as i64
     }
 }
 
