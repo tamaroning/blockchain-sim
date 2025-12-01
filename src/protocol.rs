@@ -47,6 +47,8 @@ impl Protocol for BitcoinProtocol {
                 (block_id, block.height())
             };
             let first_block_in_epoch = env.blockchain.get_block(first_block_in_epoch).unwrap();
+            // 実際は2015ブロック分で計算する
+            // 2016ブロックの難易度調整は, 0~2015ブロックのブロック間の平均生成時間で行う(2015区間)
             let average_generation_time =
                 (current_time - first_block_in_epoch.time()) as f64 / (BTC_DAA_EPOCH - 1) as f64;
             let ratio = average_generation_time / BTC_TARGET_GENERATION_TIME as f64;
