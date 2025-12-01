@@ -104,7 +104,7 @@ def main():
     )
 
     parser.add_argument(
-        "--num-nodes", type=int, default=100, help="ノード数 (デフォルト: 100)"
+        "--num-nodes", type=int, default=10, help="ノード数 (デフォルト: 10)"
     )
 
     parser.add_argument(
