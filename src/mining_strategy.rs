@@ -1,7 +1,7 @@
-use crate::{block::GENESIS_BLOCK_ID, simulator::Env};
+use crate::{block::GENESIS_BLOCK_ID, blockchain::BlockId, simulator::Env};
 use serde::{Deserialize, Serialize};
 
-fn longest_chain(env: &Env, block1_id: usize, block2_id: usize) -> usize {
+fn longest_chain(env: &Env, block1_id: BlockId, block2_id: BlockId) -> BlockId {
     let block1 = env.blockchain.get_block(block1_id).unwrap();
     let block2 = env.blockchain.get_block(block2_id).unwrap();
     let height1 = block1.height();
@@ -21,9 +21,9 @@ fn longest_chain(env: &Env, block1_id: usize, block2_id: usize) -> usize {
 
 pub enum Action {
     /// Propagate a block to a node.
-    Propagate { block_id: usize, to: usize },
+    Propagate { block_id: BlockId, to: usize },
     /// Reschedule a mining task.
-    RestartMining { prev_block_id: usize },
+    RestartMining { prev_block_id: BlockId },
 }
 
 /// マイニング戦略のトレイト
@@ -35,7 +35,7 @@ pub trait MiningStrategy: Send + Sync {
     /// Return: A list of actions to schedule.
     fn on_mining_block(
         &mut self,
-        _block_id: usize,
+        _block_id: BlockId,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
@@ -47,7 +47,7 @@ pub trait MiningStrategy: Send + Sync {
     /// Return: A list of actions to schedule.
     fn on_receiving_block(
         &mut self,
-        _block_id: usize,
+        _block_id: BlockId,
         _current_time: i64,
         _env: &Env,
         _node_id: usize,
@@ -59,7 +59,7 @@ pub trait MiningStrategy: Send + Sync {
 /// 通常のマイニング戦略（何も調整しない）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HonestMiningStrategy {
-    current_block_id: usize,
+    current_block_id: BlockId,
 }
 
 impl Default for HonestMiningStrategy {
@@ -77,7 +77,7 @@ impl MiningStrategy for HonestMiningStrategy {
 
     fn on_mining_block(
         &mut self,
-        block_id: usize,
+        block_id: BlockId,
         _current_time: i64,
         env: &Env,
         _node_id: usize,
@@ -98,7 +98,7 @@ impl MiningStrategy for HonestMiningStrategy {
 
     fn on_receiving_block(
         &mut self,
-        block_id: usize,
+        block_id: BlockId,
         _current_time: i64,
         env: &Env,
         _node_id: usize,
@@ -121,8 +121,11 @@ impl MiningStrategy for HonestMiningStrategy {
 // Selfish mining strategy
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SelfishMiningStrategy {
-    public_chain: usize,
-    private_chain: usize,
+    /// The last block of the public chain.
+    public_chain: BlockId,
+    /// The last block of the private chain.
+    private_chain: BlockId,
+    /// The length of the private branch.
     private_branch_len: usize,
 }
 
@@ -137,7 +140,7 @@ impl Default for SelfishMiningStrategy {
 }
 
 impl SelfishMiningStrategy {
-    fn get_private_branch(&self, env: &Env) -> Vec<usize> {
+    fn get_private_branch(&self, env: &Env) -> Vec<BlockId> {
         let mut blocks = Vec::new();
 
         let mut current_id = self.private_chain;
@@ -151,11 +154,11 @@ impl SelfishMiningStrategy {
         blocks
     }
 
-    fn get_last_private_block(&self, env: &Env) -> usize {
+    fn get_last_private_block(&self) -> BlockId {
         self.private_chain
     }
 
-    fn get_first_unpublished_private_block(&self, env: &Env) -> usize {
+    fn get_first_unpublished_private_block(&self, env: &Env) -> BlockId {
         let mut current_id = self.private_chain;
         for _ in 0..self.private_branch_len {
             let block = env.blockchain.get_block(current_id).unwrap();
@@ -172,7 +175,7 @@ impl MiningStrategy for SelfishMiningStrategy {
 
     fn on_mining_block(
         &mut self,
-        block_id: usize,
+        block_id: BlockId,
         _current_time: i64,
         env: &Env,
         _node_id: usize,
@@ -219,7 +222,7 @@ impl MiningStrategy for SelfishMiningStrategy {
 
     fn on_receiving_block(
         &mut self,
-        block_id: usize,
+        block_id: BlockId,
         _current_time: i64,
         env: &Env,
         _node_id: usize,
@@ -260,7 +263,7 @@ impl MiningStrategy for SelfishMiningStrategy {
         } else if delta_prev == 1 {
             // publish the last block of the private chain.
             // Now the same length. Try our luck.
-            let published_block_id = self.get_last_private_block(env);
+            let published_block_id = self.get_last_private_block();
             for other_node in 0..env.num_nodes {
                 actions.push(Action::Propagate {
                     block_id: published_block_id,

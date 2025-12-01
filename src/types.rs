@@ -1,13 +1,4 @@
-use clap::ValueEnum;
 use serde::Serialize;
-
-#[derive(ValueEnum, Debug, Clone, Default, PartialEq)]
-#[clap(rename_all = "kebab_case")]
-pub enum TieBreakingRule {
-    #[default]
-    Longest,
-    Time,
-}
 
 #[derive(Serialize)]
 pub struct Record {

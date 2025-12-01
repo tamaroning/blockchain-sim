@@ -1,11 +1,10 @@
-use crate::block::Block;
-use crate::blockchain::Blockchain;
+use crate::block::{Block, GENESIS_BLOCK_ID};
+use crate::blockchain::{BlockId, Blockchain};
 use crate::event::{Event, EventType};
 use crate::mining_strategy::Action;
 use crate::node::Node;
 use crate::profile::NetworkProfile;
 use crate::protocol::Protocol;
-use crate::types::TieBreakingRule;
 use priority_queue::PriorityQueue;
 use rand::prelude::*;
 use rand_distr::Exp;
@@ -42,8 +41,6 @@ pub struct BlockchainSimulator {
     end_round: i64,
     /// A protocol used.
     protocol: Box<dyn Protocol>,
-    /// The tie-breaking rule to use.
-    tie: TieBreakingRule,
     /// A random number generator.
     rng: StdRng,
     /// A writer for CSV output.
@@ -55,7 +52,6 @@ impl BlockchainSimulator {
         num_nodes: usize,
         seed: u64,
         end_round: i64,
-        tie: TieBreakingRule,
         delay: i64,
         generation_time: i64,
         protocol: Box<dyn Protocol>,
@@ -88,7 +84,6 @@ impl BlockchainSimulator {
             },
             current_round: 0,
             current_time: 0,
-            tie,
             nodes,
             total_hashrate,
             end_round,
@@ -104,7 +99,6 @@ impl BlockchainSimulator {
         profile: NetworkProfile,
         seed: u64,
         end_round: i64,
-        tie: TieBreakingRule,
         delay: i64,
         generation_time: i64,
         protocol: Box<dyn Protocol>,
@@ -137,7 +131,6 @@ impl BlockchainSimulator {
             },
             current_round: 0,
             current_time: 0,
-            tie,
             nodes,
             total_hashrate,
             end_round,
@@ -183,7 +176,7 @@ impl BlockchainSimulator {
                     minter: node_id,
                     prev_block_id: *prev_block_id,
                     // Dummy. We set it to proper value at the end of the function.
-                    block_id: 0,
+                    block_id: GENESIS_BLOCK_ID,
                 },
             };
 
@@ -279,12 +272,14 @@ impl BlockchainSimulator {
 
     fn enqueue_first_mining_task(&mut self) {
         for node_id in 0..self.nodes.len() {
-            let actions = vec![Action::RestartMining { prev_block_id: 0 }];
+            let actions = vec![Action::RestartMining {
+                prev_block_id: GENESIS_BLOCK_ID,
+            }];
             self.enqueue_actions(node_id, &actions);
         }
     }
 
-    fn handle_block_generation(&mut self, minter: usize, block_id: usize) {
+    fn handle_block_generation(&mut self, minter: usize, block_id: BlockId) {
         let new_block = self.env.blockchain.get_block(block_id).unwrap();
 
         // コールバックを呼び出してタスクをスケジュール
@@ -310,7 +305,7 @@ impl BlockchainSimulator {
         self.enqueue_actions(minter, &actions);
     }
 
-    fn handle_propagation(&mut self, from: usize, to: usize, block_id: usize) {
+    fn handle_propagation(&mut self, from: usize, to: usize, block_id: BlockId) {
         // コールバックを呼び出してタスクをスケジュール
         let actions = self.nodes[to].mining_strategy_mut().on_receiving_block(
             block_id,
@@ -353,12 +348,8 @@ impl BlockchainSimulator {
     }
 
     fn calculate_new_difficulty(&self, parent_block: &Block) -> f64 {
-        self.protocol.calculate_difficulty(
-            parent_block,
-            self.current_time,
-            self.env.generation_time,
-            self.env.blockchain.blocks(),
-        )
+        self.protocol
+            .calculate_difficulty(parent_block, self.current_time, &self.env)
     }
 
     pub fn print_summary(&self) {

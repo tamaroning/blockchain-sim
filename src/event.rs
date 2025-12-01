@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 
+use crate::blockchain::BlockId;
+
 #[derive(Clone, Debug, Hash)]
 pub struct Event {
     time: i64,
@@ -32,13 +34,13 @@ impl Event {
 pub enum EventType {
     BlockGeneration {
         minter: usize,
-        prev_block_id: usize,
-        block_id: usize,
+        prev_block_id: BlockId,
+        block_id: BlockId,
     },
     Propagation {
         from: usize,
         to: usize,
-        block_id: usize,
+        block_id: BlockId,
     },
 }
 

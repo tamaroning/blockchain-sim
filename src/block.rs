@@ -1,14 +1,16 @@
-pub const GENESIS_BLOCK_ID: usize = 0;
+use crate::blockchain::BlockId;
+
+pub const GENESIS_BLOCK_ID: BlockId = BlockId::new(0);
 
 /// ブロックを表す構造体
 #[derive(Clone, Debug)]
 pub struct Block {
     height: i64,
-    prev_block_id: Option<usize>,
+    prev_block_id: Option<BlockId>,
     minter: i32,
     time: i64,
     rand: i64,
-    id: usize,
+    id: BlockId,
     /// 大きいほど難しい。
     difficulty: f64,
     /// マイニングにかかった時間
@@ -18,11 +20,11 @@ pub struct Block {
 impl Block {
     pub fn new(
         height: i64,
-        prev_block_id: Option<usize>,
+        prev_block_id: Option<BlockId>,
         minter: i32,
         time: i64,
         rand: i64,
-        id: usize,
+        id: BlockId,
         difficulty: f64,
         mining_time: i64,
     ) -> Self {
@@ -55,7 +57,7 @@ impl Block {
         self.height
     }
 
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> BlockId {
         self.id
     }
 
@@ -71,7 +73,7 @@ impl Block {
         self.time
     }
 
-    pub fn prev_block_id(&self) -> Option<usize> {
+    pub fn prev_block_id(&self) -> Option<BlockId> {
         self.prev_block_id
     }
 

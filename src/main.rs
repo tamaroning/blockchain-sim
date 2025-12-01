@@ -1,4 +1,4 @@
-use blockchain_sim::{BlockchainSimulator, NetworkProfile, ProtocolType, TieBreakingRule};
+use blockchain_sim::{BlockchainSimulator, NetworkProfile, ProtocolType};
 use clap::Parser;
 use rand::Rng;
 use std::path::PathBuf;
@@ -13,10 +13,6 @@ struct Cli {
 
     #[clap(long, default_value = "10")]
     end_round: i64,
-
-    #[clap(long, value_enum, default_value_t = TieBreakingRule::Longest)]
-    #[arg(value_enum)]
-    tie: TieBreakingRule,
 
     #[clap(long, default_value = "6000")]
     delay: i64, // ブロック伝播時間
@@ -75,7 +71,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             profile,
             args.seed.unwrap(),
             args.end_round,
-            args.tie,
             args.delay,
             args.generation_time,
             args.protocol.to_protocol(),
@@ -88,7 +83,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.num_nodes,
             args.seed.unwrap(),
             args.end_round,
-            args.tie,
             args.delay,
             args.generation_time,
             args.protocol.to_protocol(),
