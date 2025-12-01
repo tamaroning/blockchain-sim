@@ -5,29 +5,35 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug, Clone)]
 struct Cli {
+    /// The number of nodes.
     #[clap(short, long, default_value = "10")]
     num_nodes: usize,
 
+    /// The seed for the random number generator.
     #[clap(short, long)]
     seed: Option<u64>,
 
+    /// The maximum round (block height) to simulate.
     #[clap(long, default_value = "10")]
     end_round: i64,
 
+    /// The delay time for block propagation.
     #[clap(long, default_value = "6000")]
-    delay: i64, // ブロック伝播時間
+    delay: i64,
 
+    /// The generation time for block mining.
     #[clap(long, default_value = "600000")]
-    generation_time: i64, // ブロック生成時間
+    generation_time: i64,
 
     #[clap(long, value_enum, default_value_t = ProtocolType::Bitcoin)]
     protocol: ProtocolType,
 
-    /// CSV出力ファイルパス
+    /// The path to the CSV file for output.
     #[clap(long, short)]
     output: Option<PathBuf>,
 
-    /// ネットワークプロファイルファイルパス（指定すると、このプロファイルからノード構成を読み込む）
+    /// The path to the network profile file.
+    /// See examples/honest.json for example.
     #[clap(long)]
     profile: Option<PathBuf>,
 }
@@ -36,7 +42,7 @@ fn main() {
     env_logger::init();
 
     if let Err(e) = run() {
-        eprintln!("エラー: {}", e);
+        eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
@@ -46,27 +52,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if args.seed.is_none() {
         args.seed = Some(rand::thread_rng().r#gen::<u64>());
     }
-    log::info!("args: {:?}", args);
 
     let output = args
         .output
         .map(|path| csv::Writer::from_path(path).expect("Failed to create CSV writer"));
 
     let mut simulator = if let Some(profile_path) = args.profile {
-        // プロファイルから読み込む
+        // Load from profile
         let profile = NetworkProfile::from_file(&profile_path)
             .map_err(|e| {
                 format!(
-                    "プロファイルファイル '{}' の読み込みに失敗しました: {}\n\nプロファイルファイルの形式を確認してください。\n例: examples/profile-example.json",
+                    "Failed to load profile file '{}': {}\n\nPlease check the format of the profile file.\nExample: examples/profile-example.json",
                     profile_path.display(),
                     e
                 )
             })?;
         log::info!(
-            "プロファイルファイル '{}' を読み込みました",
+            "Loaded profile file '{}'",
             profile_path.display()
         );
-        log::info!("読み込んだノード数: {}", profile.num_nodes());
+        log::info!("Number of nodes loaded: {}", profile.num_nodes());
         BlockchainSimulator::new_with_profile(
             profile,
             args.seed.unwrap(),
@@ -76,9 +81,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.protocol.to_protocol(),
             output,
         )
-        .map_err(|e| format!("プロファイルからシミュレーターの作成に失敗しました: {}", e))?
+        .map_err(|e| format!("Failed to create simulator from profile: {}", e))?
     } else {
-        // 従来通りランダムに生成
         BlockchainSimulator::new(
             args.num_nodes,
             args.seed.unwrap(),
@@ -96,7 +100,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     simulator.print_summary();
     simulator.print_mining_fairness();
 
-    // CSVにmainchainのブロックを出力
+    // Output mainchain blocks to CSV
     // round,difficulty,time
     if let Some(csv) = &mut simulator.csv {
         for block in simulator.env.blockchain.get_main_chain() {

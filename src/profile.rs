@@ -3,18 +3,18 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-/// ノードの設定を表す構造体
+/// A struct representing node configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeProfile {
-    /// ハッシュレート
+    /// Hashrate
     pub hashrate: i64,
-    /// マイニング戦略
+    /// Mining strategy
     pub strategy: MiningStrategyEnum,
 }
 
-/// ネットワークプロファイル（全ノードの設定）
+/// Network profile (configuration for all nodes)
 ///
-/// # 使用例
+/// # Usage Example
 ///
 /// ```json
 /// {
@@ -23,13 +23,6 @@ pub struct NodeProfile {
 ///       "hashrate": 1000,
 ///       "strategy": {
 ///         "type": "honest"
-///       }
-///     },
-///     {
-///       "hashrate": 2000,
-///       "strategy": {
-///         "type": "pure_propagation_delay",
-///         "propagation_delay": 10000
 ///       }
 ///     },
 ///     {
@@ -42,34 +35,32 @@ pub struct NodeProfile {
 /// }
 /// ```
 ///
-/// # 戦略の種類とパラメータ
+/// # Strategy Types and Parameters
 ///
-/// - `honest`: パラメータなし
-/// - `pure_propagation_delay`: `propagation_delay` (i64) - 伝播遅延時間
-/// - `simple_submission_postpone`: `postpone_time` (i64) - 公開を遅らせる時間
-/// - `k_lead_selfish_mining`: `k` (i64) - リードを取る必要があるブロック数（デフォルト: 1）
+/// - `honest`: No parameters.
+/// - `selfish`: No parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkProfile {
-    /// ノードの設定リスト（インデックスがノードIDに対応）
+    /// A list of node profiles.
     pub nodes: Vec<NodeProfile>,
 }
 
 impl NetworkProfile {
-    /// プロファイルをJSONファイルから読み込む
+    /// Load profile from JSON file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
         let profile: NetworkProfile = serde_json::from_str(&content)?;
         Ok(profile)
     }
 
-    /// プロファイルをJSONファイルに保存する
+    /// Save profile to JSON file
     pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<(), Box<dyn std::error::Error>> {
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json)?;
         Ok(())
     }
 
-    /// プロファイルからノードのマイニング戦略を作成する
+    /// Create mining strategy for a node from profile
     pub fn create_strategy(
         &self,
         node_index: usize,
@@ -78,7 +69,7 @@ impl NetworkProfile {
         Ok(node_profile.strategy.to_strategy())
     }
 
-    /// ノード数を取得
+    /// Get the number of nodes
     pub fn num_nodes(&self) -> usize {
         self.nodes.len()
     }

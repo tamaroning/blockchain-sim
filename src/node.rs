@@ -1,6 +1,6 @@
 use crate::mining_strategy::MiningStrategy;
 
-/// ノードを表す構造体
+/// A miner in the network.
 pub struct Node {
     /// The ID of the node.
     id: usize,
