@@ -21,10 +21,6 @@ struct Cli {
     #[clap(long, default_value = "6000")]
     delay: i64,
 
-    /// The generation time for block mining.
-    #[clap(long, default_value = "600000")]
-    generation_time: i64,
-
     #[clap(long, value_enum, default_value_t = ProtocolType::Bitcoin)]
     protocol: ProtocolType,
 
@@ -77,7 +73,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.seed.unwrap(),
             args.end_round,
             args.delay,
-            args.generation_time,
             args.protocol.to_protocol(),
             output,
         )
@@ -88,7 +83,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.seed.unwrap(),
             args.end_round,
             args.delay,
-            args.generation_time,
             args.protocol.to_protocol(),
             output,
         )

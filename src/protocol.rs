@@ -37,16 +37,15 @@ impl Protocol for BitcoinProtocol {
         let new_height = parent_height + 1;
 
         let new_difficulty = if new_height % BTC_DAA_EPOCH == 0 && new_height >= BTC_DAA_EPOCH {
-            let (first_block_in_epoch, first_block_in_epoch_height) = {
+            let first_block_in_epoch = {
                 let mut block_id = parent_block_id;
                 let mut block = env.blockchain.get_block(block_id).unwrap();
                 for _ in 0..(BTC_DAA_EPOCH - 1) {
                     block_id = block.prev_block_id().unwrap();
                     block = env.blockchain.get_block(block_id).unwrap();
                 }
-                (block_id, block.height())
+                block
             };
-            let first_block_in_epoch = env.blockchain.get_block(first_block_in_epoch).unwrap();
             // 実際は2015ブロック分で計算する
             // 2016ブロックの難易度調整は, 0~2015ブロックのブロック間の平均生成時間で行う(2015区間)
             let average_generation_time =
@@ -91,7 +90,7 @@ impl Protocol for EthereumProtocol {
         let grand_parent_block_id = parent_block.prev_block_id().unwrap();
         let grand_parent_block = env.blockchain.get_block(grand_parent_block_id).unwrap();
 
-        let time_diff = (parent_block.time() - grand_parent_block.time()) / 1_000_000; // us to s
+        let time_diff = (parent_block.time() - grand_parent_block.time()) / 1_000; // ms to s
         let adjustment_factor = (1 - (time_diff / 10)).max(-99);
         let difficulty_adjustment = (parent_block.difficulty() / 2048.) as i64 * adjustment_factor;
 

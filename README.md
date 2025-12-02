@@ -13,6 +13,7 @@ Network topology:
 - [ ] Simulate [time warp](https://bitcoinops.org/en/topics/time-warp/)
 - [ ] Simulate [Uncle Maker](https://dl.acm.org/doi/10.1145/3576915.3616674)
 - [ ] Uncle rewards in Ethereum
+- [ ] [Longest chain rule](https://learnmeabitcoin.com/technical/blockchain/longest-chain/) (Currently literally the longest chain is chosen)
 
 ## Usage
 

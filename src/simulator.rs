@@ -15,8 +15,6 @@ pub struct Env {
     pub num_nodes: usize,
     /// The delay time for block propagation.
     pub delay: i64,
-    /// The generation time for block mining.
-    pub generation_time: i64,
 
     // Current environments
     /// A instance of the blockchain.
@@ -30,7 +28,7 @@ pub struct BlockchainSimulator {
     event_queue: PriorityQueue<Event, i64>,
     /// Maximum height of the blocks created.
     current_round: i64,
-    /// The current time of the simulation.
+    /// The current time of the simulation in ms.
     current_time: i64,
     /// A list of nodes.
     nodes: Vec<Node>,
@@ -53,7 +51,6 @@ impl BlockchainSimulator {
         seed: u64,
         end_round: i64,
         delay: i64,
-        generation_time: i64,
         protocol: Box<dyn Protocol>,
         csv: Option<csv::Writer<std::fs::File>>,
     ) -> Self {
@@ -79,7 +76,6 @@ impl BlockchainSimulator {
             env: Env {
                 num_nodes,
                 delay,
-                generation_time,
                 blockchain: Blockchain::new(&*protocol),
             },
             current_round: 0,
@@ -100,7 +96,6 @@ impl BlockchainSimulator {
         seed: u64,
         end_round: i64,
         delay: i64,
-        generation_time: i64,
         protocol: Box<dyn Protocol>,
         csv: Option<csv::Writer<std::fs::File>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -126,7 +121,6 @@ impl BlockchainSimulator {
             env: Env {
                 num_nodes: profile.num_nodes(),
                 delay,
-                generation_time,
                 blockchain: Blockchain::new(&*protocol),
             },
             current_round: 0,
@@ -379,10 +373,6 @@ impl BlockchainSimulator {
             "- Avg. time/block: {}",
             self.current_time as f64 / main_chain_length as f64
         );
-
-        // Δ/T = 遅延 / 生成時間
-        let ratio = self.env.delay as f64 / self.env.generation_time as f64;
-        log::info!("- Δ/T: {:.2}", ratio);
     }
 
     /// メインチェーンをトラバーサルして報酬を計算し、mining fairnessを表示する

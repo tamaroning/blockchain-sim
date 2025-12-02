@@ -7,32 +7,34 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 
 
-def run_cargo_command(delta, num_nodes, generation_time, end_round, protocol):
+def run_cargo_command(delta_T, num_nodes, end_round, protocol):
     """
     指定されたdelta値に基づいてcargoコマンドを実行する
 
     Args:
-        delta (float): delta値 (delay/generation-time)
+        delta_T: Δ/T値 (ネットワーク遅延 / ブロック生成時間)
         num_nodes (int): ノード数
-        generation_time (int): 固定のgeneration-time値
         end_round (int): 固定のend-round値
         protocol (str): プロトコル名
 
     Returns:
         tuple: (delta, success, message)
     """
-    # delayを計算 (delta = delay / generation_time)
-    delay = int(delta * generation_time)
+    if protocol == "bitcoin":
+        generation_time = 600_000
+    elif protocol == "ethereum":
+        generation_time = 15_000
+    else:
+        raise ValueError(f"Invalid protocol: {protocol}")
+    
+    delta = int(delta_T * generation_time)
 
-    # 出力ファイル名を設定
-    output_file = f"data/{protocol}-{delta}.csv"
-
+    output_file = f"data/{protocol}-{delta_T}.csv"
     cmd = [
         "../target/release/blockchain-sim",
         f"--num-nodes={num_nodes}",
         f"--end-round={end_round}",
-        f"--delay={delay}",
-        f"--generation-time={generation_time}",
+        f"--delay={delta}",
         f"--protocol={protocol}",
         f"--output={output_file}",
     ]
@@ -41,29 +43,26 @@ def run_cargo_command(delta, num_nodes, generation_time, end_round, protocol):
     env = {"RUST_LOG": "info"}
 
     thread_id = threading.current_thread().ident
-    print(
-        f"[Thread {thread_id}] 開始: delta={delta}, delay={delay}, protocol={protocol}, output={output_file}"
-    )
-    print(f"[Thread {thread_id}] コマンド: RUST_LOG=info {' '.join(cmd)}")
+    print(f"[Thread {thread_id}] Δ/T={delta_T} command: {' '.join(cmd)}")
 
     try:
         # コマンドを実行
         result = subprocess.run(cmd, env=env, capture_output=True, text=True)
 
         if result.returncode == 0:
-            message = f"✓ Δ/T={delta} (protocol={protocol}) の実行が完了しました"
+            message = f"✓ Δ/T={delta_T} (protocol={protocol}) の実行が完了しました"
             if result.stdout:
                 message += f"\n出力: {result.stdout}"
-            return (delta, True, message)
+            return (delta_T, True, message)
         else:
-            message = f"✗ Δ/T={delta} (protocol={protocol}) の実行でエラーが発生しました\nエラー: {result.stderr}"
-            return (delta, False, message)
+            message = f"✗ Δ/T={delta_T} (protocol={protocol}) の実行でエラーが発生しました\nエラー: {result.stderr}"
+            return (delta_T, False, message)
 
     except Exception as e:
         message = (
-            f"✗ Δ/T={delta} (protocol={protocol}) の実行中に例外が発生しました: {e}"
+            f"✗ Δ/T={delta_T} (protocol={protocol}) の実行中に例外が発生しました: {e}"
         )
-        return (delta, False, message)
+        return (delta_T, False, message)
 
 
 def parse_delta_values(delta_str):
@@ -97,21 +96,14 @@ def main():
     )
 
     parser.add_argument(
-        "--delta-values",
+        "--delta-T-values",
         type=parse_delta_values,
         default=[0.001, 0.01, 0.05, 0.1, 0.25, 0.5],
-        help="実行するdelta値のリスト（コンマ区切り）(デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5)",
+        help="実行するΔ/T値のリスト（コンマ区切り）(デフォルト: 0.001,0.01,0.05,0.1,0.25,0.5)",
     )
 
     parser.add_argument(
         "--num-nodes", type=int, default=10, help="ノード数 (デフォルト: 10)"
-    )
-
-    parser.add_argument(
-        "--generation-time",
-        type=int,
-        default=15000000,
-        help="generation-time値 (デフォルト: 15000000)",
     )
 
     parser.add_argument(
@@ -137,15 +129,14 @@ def main():
     if args.serial or args.max_workers == 0:
         max_workers = 1
     elif args.max_workers is None:
-        max_workers = min(os.cpu_count(), len(args.delta_values))
+        max_workers = min(os.cpu_count(), len(args.delta_T_values))
     else:
-        max_workers = min(args.max_workers, len(args.delta_values))
+        max_workers = min(args.max_workers, len(args.delta_T_values))
 
     print("Cargo コマンドの一括実行を開始します...")
     print(f"プロトコル: {args.protocol}")
-    print(f"実行予定のdelta値: {args.delta_values}")
+    print(f"実行予定のΔ/T値: {args.delta_T_values}")
     print(f"ノード数: {args.num_nodes}")
-    print(f"Generation Time: {args.generation_time}")
     print(f"End Round: {args.end_round}")
     print(f"最大並列実行数: {max_workers}")
     print("=" * 50)
@@ -157,11 +148,10 @@ def main():
         # 順次実行
         print("順次実行モードで実行中...")
         results = []
-        for delta in args.delta_values:
+        for delta_T in args.delta_T_values:
             result = run_cargo_command(
-                delta,
+                delta_T,
                 num_nodes=args.num_nodes,
-                generation_time=args.generation_time,
                 end_round=args.end_round,
                 protocol=args.protocol,
             )
@@ -175,28 +165,27 @@ def main():
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # 全てのタスクを投入
-            future_to_delta = {
+            future_to_delta_T = {
                 executor.submit(
                     run_cargo_command,
-                    delta,
+                    delta_T,
                     num_nodes=args.num_nodes,
-                    generation_time=args.generation_time,
                     end_round=args.end_round,
                     protocol=args.protocol,
-                ): delta
-                for delta in args.delta_values
+                ): delta_T
+                for delta_T in args.delta_T_values
             }
 
             # 完了したタスクの結果を収集
-            for future in as_completed(future_to_delta):
-                delta = future_to_delta[future]
+            for future in as_completed(future_to_delta_T):
+                delta_T = future_to_delta_T[future]
                 try:
                     result = future.result()
                     results.append(result)
                     print(f"[完了] {result[2]}")
                     print("-" * 50)
                 except Exception as exc:
-                    error_msg = f"✗ Δ/T={delta} でエラーが発生しました: {exc}"
+                    error_msg = f"✗ Δ/T={delta_T} でエラーが発生しました: {exc}"
                     results.append((delta, False, error_msg))
                     print(f"[エラー] {error_msg}")
                     print("-" * 50)
