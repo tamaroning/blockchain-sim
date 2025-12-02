@@ -47,8 +47,8 @@ def main():
     # Sort by round
     df = df.sort_values("round")
 
-    # Convert mining time from us to seconds
-    df["mining_time_sec"] = df["mining_time"] / 1000 / 1000
+    # Convert mining time from ms to seconds
+    df["mining_time_sec"] = df["mining_time"] / 1000
 
     # Calculate moving average in seconds
     window_size = args.window
