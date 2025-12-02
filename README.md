@@ -29,8 +29,6 @@ RUST_LOG="info" cargo run --release -- --profile examples/selfish.json --end-rou
 
 Plot: difficulty and block generation time over time.
 
-# show png in experiment/plot-mining-bitocoin-0.1.png
-
 ![Plot](experiment/plot-mining-bitcoin-0.1.png "Plot")
 
 
