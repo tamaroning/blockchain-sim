@@ -18,7 +18,7 @@ struct Cli {
     end_round: i64,
 
     /// The delay time for block propagation.
-    #[clap(long, default_value = "6000")]
+    #[clap(long, default_value = "600")]
     delay: i64,
 
     #[clap(long, value_enum, default_value_t = ProtocolType::Bitcoin)]

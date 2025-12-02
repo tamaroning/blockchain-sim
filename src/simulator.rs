@@ -108,11 +108,6 @@ impl BlockchainSimulator {
             nodes.push(Node::new_with_strategy(i, node_profile.hashrate, strategy));
         }
 
-        log::info!(
-            "Hashrates: {:?}",
-            nodes.iter().map(|n| n.hashrate()).collect::<Vec<_>>()
-        );
-
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
         let event_queue = PriorityQueue::<Event, i64>::new();
         let rng = StdRng::seed_from_u64(seed);
