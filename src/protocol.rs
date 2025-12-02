@@ -83,14 +83,12 @@ impl Protocol for EthereumProtocol {
         2f64.powi(32)
     }
 
-    fn calculate_difficulty(&self, parent_block: &Block, _current_time: i64, env: &Env) -> f64 {
+    fn calculate_difficulty(&self, parent_block: &Block, current_time: i64, _env: &Env) -> f64 {
         if parent_block.height() == 0 {
             return self.default_difficulty();
         }
-        let grand_parent_block_id = parent_block.prev_block_id().unwrap();
-        let grand_parent_block = env.blockchain.get_block(grand_parent_block_id).unwrap();
 
-        let time_diff = (parent_block.time() - grand_parent_block.time()) / 1_000; // ms to s
+        let time_diff = (current_time - parent_block.time()) / 1_000; // ms to s
         let adjustment_factor = (1 - (time_diff / 10)).max(-99);
         let difficulty_adjustment = (parent_block.difficulty() / 2048.) as i64 * adjustment_factor;
 
