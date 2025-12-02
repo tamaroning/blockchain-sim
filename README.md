@@ -7,17 +7,24 @@ Network topology:
 - Complete graph
 - Constant network delay
 
-Usage:
+## Todo
+
+- [x] Simulate [selfish mining](https://arxiv.org/abs/1311.0243)
+- [ ] Simulate [time warp](https://bitcoinops.org/en/topics/time-warp/)
+- [ ] Simulate [Uncle Maker](https://dl.acm.org/doi/10.1145/3576915.3616674)
+- [ ] Uncle rewards in Ethereum
+
+## Usage
 
 ```bash
 # Run Ethereum protocol with 100 nodes for 10,000 rounds
 RUST_LOG="info" cargo run --release -- --end-round 10000 --protocol ethereum --num-nodes 100
 
 # Selfish mining experiment
-RUST_LOG="info" cargo run --release -- --profile examples/honest.json --end-round 1000000
+RUST_LOG="info" cargo run --release -- --profile examples/selfish.json --end-round 100000
 ```
 
-Evaluation:
+## Experiments
 
 ```bash
 cd experiment

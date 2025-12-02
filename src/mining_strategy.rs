@@ -241,15 +241,6 @@ impl MiningStrategy for SelfishMiningStrategy {
             .height();
         let delta_prev = private_chain_height - public_chain_height;
 
-        println!(
-            "block_height: {:?}",
-            env.blockchain.get_block(block_id).unwrap().height()
-        );
-        println!(
-            "private_chain_height: {}, public_chain_height: {}, delta_prev: {}",
-            private_chain_height, public_chain_height, delta_prev
-        );
-
         // update the public chain if the incoming block is longer than the known public chain.
         self.public_chain = longest_chain(env, self.public_chain, block_id);
 
