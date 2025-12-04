@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{block::GENESIS_BLOCK_ID, blockchain::BlockId, simulator::Env};
 use serde::{Deserialize, Serialize};
 
@@ -127,6 +129,8 @@ pub struct SelfishMiningStrategy {
     private_chain: BlockId,
     /// The length of the private branch.
     private_branch_len: usize,
+    // published blocks
+    published_blocks: HashSet<BlockId>,
 }
 
 impl Default for SelfishMiningStrategy {
@@ -135,6 +139,7 @@ impl Default for SelfishMiningStrategy {
             public_chain: GENESIS_BLOCK_ID,
             private_chain: GENESIS_BLOCK_ID,
             private_branch_len: 0,
+            published_blocks: HashSet::new(),
         }
     }
 }
@@ -165,6 +170,23 @@ impl SelfishMiningStrategy {
             current_id = block.prev_block_id().unwrap();
         }
         current_id
+    }
+
+    fn publish_block(&mut self, block: BlockId, env: &Env) -> Vec<Action> {
+        let published = self.published_blocks.contains(&block);
+        if published {
+            vec![]
+        } else {
+            let mut actions = vec![];
+            self.published_blocks.insert(block);
+            for node in 0..env.num_nodes {
+                actions.push(Action::Propagate {
+                    block_id: block,
+                    to: node,
+                });
+            }
+            actions
+        }
     }
 }
 
@@ -203,12 +225,7 @@ impl MiningStrategy for SelfishMiningStrategy {
             // Publish all the blocks in the private chain.
             // This node can win due to the lead of 1 block.
             for private_block_id in self.get_private_branch(env) {
-                for other_node in 0..env.num_nodes {
-                    actions.push(Action::Propagate {
-                        block_id: private_block_id,
-                        to: other_node,
-                    });
-                }
+                self.publish_block(private_block_id, env);
             }
             self.private_branch_len = 0;
         }
@@ -255,33 +272,18 @@ impl MiningStrategy for SelfishMiningStrategy {
             // publish the last block of the private chain.
             // Now the same length. Try our luck.
             let published_block_id = self.get_last_private_block();
-            for other_node in 0..env.num_nodes {
-                actions.push(Action::Propagate {
-                    block_id: published_block_id,
-                    to: other_node,
-                });
-            }
+            self.publish_block(published_block_id, env);
         } else if delta_prev == 2 {
             // Publish all the blocks in the private chain.
             // This node can win due to the lead of 1 block.
             for private_block_id in self.get_private_branch(env) {
-                for other_node in 0..env.num_nodes {
-                    actions.push(Action::Propagate {
-                        block_id: private_block_id,
-                        to: other_node,
-                    });
-                }
+                self.publish_block(private_block_id, env);
             }
             self.private_branch_len = 0;
         } else {
             // Publish the first unpublished block in the private chain.
             let published_block_id = self.get_first_unpublished_private_block(env);
-            for other_node in 0..env.num_nodes {
-                actions.push(Action::Propagate {
-                    block_id: published_block_id,
-                    to: other_node,
-                });
-            }
+            self.publish_block(published_block_id, env);
         }
         actions
     }
