@@ -31,7 +31,7 @@ pub struct BlockchainSimulator {
     /// The current time of the simulation in ms.
     current_time: i64,
     /// A list of nodes.
-    nodes: Vec<Node>,
+    pub nodes: Vec<Node>,
     /// The total hashrate of all nodes.
     /// This matches to the sum of hashrates of all nodes.
     total_hashrate: i64,
@@ -41,8 +41,6 @@ pub struct BlockchainSimulator {
     protocol: Box<dyn Protocol>,
     /// A random number generator.
     rng: StdRng,
-    /// A writer for CSV output.
-    pub csv: Option<csv::Writer<std::fs::File>>,
 }
 
 impl BlockchainSimulator {
@@ -52,7 +50,6 @@ impl BlockchainSimulator {
         end_round: i64,
         delay: i64,
         protocol: Box<dyn Protocol>,
-        csv: Option<csv::Writer<std::fs::File>>,
     ) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
         let exp_dist = Exp::new(1.0).unwrap();
@@ -85,7 +82,6 @@ impl BlockchainSimulator {
             end_round,
             rng,
             protocol,
-            csv,
             event_queue,
         }
     }
@@ -97,7 +93,6 @@ impl BlockchainSimulator {
         end_round: i64,
         delay: i64,
         protocol: Box<dyn Protocol>,
-        csv: Option<csv::Writer<std::fs::File>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut nodes = Vec::with_capacity(profile.num_nodes());
 
@@ -125,7 +120,6 @@ impl BlockchainSimulator {
             end_round,
             rng,
             protocol,
-            csv,
             event_queue,
         })
     }

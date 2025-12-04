@@ -3,10 +3,10 @@ use crate::mining_strategy::MiningStrategy;
 /// A miner in the network.
 pub struct Node {
     /// The ID of the node.
-    id: usize,
+    pub id: usize,
     /// The hashrate of the node.
-    hashrate: i64,
-    mining_strategy: Box<dyn MiningStrategy>,
+    pub hashrate: i64,
+    pub mining_strategy: Box<dyn MiningStrategy>,
 }
 
 impl Node {
