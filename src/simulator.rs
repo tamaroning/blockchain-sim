@@ -1,8 +1,10 @@
+use std::collections::HashMap;
+
 use crate::block::{Block, GENESIS_BLOCK_ID};
 use crate::blockchain::{BlockId, Blockchain};
 use crate::event::{Event, EventType};
 use crate::mining_strategy::Action;
-use crate::node::Node;
+use crate::node::{Node, NodeId, NodeList};
 use crate::profile::NetworkProfile;
 use crate::protocol::Protocol;
 use priority_queue::PriorityQueue;
@@ -12,13 +14,26 @@ use rand_distr::Exp;
 pub struct Env {
     // Configuration
     /// The number of nodes.
-    pub num_nodes: usize,
+    nodes: Vec<NodeId>,
     /// The delay time for block propagation.
     pub delay: i64,
-
     // Current environments
     /// A instance of the blockchain.
     pub blockchain: Blockchain,
+}
+
+impl Env {
+    pub fn new(nodes: &[Node], delay: i64, protocol: &dyn Protocol) -> Self {
+        Self {
+            nodes: nodes.iter().map(|n| n.id()).collect(),
+            delay,
+            blockchain: Blockchain::new(&*protocol),
+        }
+    }
+
+    pub fn nodes(&self) -> &[NodeId] {
+        &self.nodes
+    }
 }
 
 pub struct BlockchainSimulator {
@@ -31,7 +46,7 @@ pub struct BlockchainSimulator {
     /// The current time of the simulation in ms.
     current_time: i64,
     /// A list of nodes.
-    pub nodes: Vec<Node>,
+    pub nodes: NodeList,
     /// The total hashrate of all nodes.
     /// This matches to the sum of hashrates of all nodes.
     total_hashrate: i64,
@@ -58,7 +73,7 @@ impl BlockchainSimulator {
         // 指数分布でハッシュレートを生成し、ノードを作成
         for i in 0..num_nodes {
             let hashrate = (exp_dist.sample(&mut rng) * 10000.0) as i64 + 1; // 最低1は保証
-            nodes.push(Node::new(i, hashrate));
+            nodes.push(Node::new(NodeId::new(i), hashrate));
         }
         log::info!(
             "Hashrates: {:?}",
@@ -70,14 +85,10 @@ impl BlockchainSimulator {
         let event_queue = PriorityQueue::<Event, i64>::new();
 
         Self {
-            env: Env {
-                num_nodes,
-                delay,
-                blockchain: Blockchain::new(&*protocol),
-            },
+            env: Env::new(&nodes, delay, &*protocol),
             current_round: 0,
             current_time: 0,
-            nodes,
+            nodes: NodeList::new(nodes),
             total_hashrate,
             end_round,
             rng,
@@ -100,7 +111,11 @@ impl BlockchainSimulator {
         for i in 0..profile.num_nodes() {
             let node_profile = &profile.nodes[i];
             let strategy = profile.create_strategy(i)?;
-            nodes.push(Node::new_with_strategy(i, node_profile.hashrate, strategy));
+            nodes.push(Node::new_with_strategy(
+                NodeId::new(i),
+                node_profile.hashrate,
+                strategy,
+            ));
         }
 
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
@@ -108,14 +123,10 @@ impl BlockchainSimulator {
         let rng = StdRng::seed_from_u64(seed);
 
         Ok(Self {
-            env: Env {
-                num_nodes: profile.num_nodes(),
-                delay,
-                blockchain: Blockchain::new(&*protocol),
-            },
+            env: Env::new(&nodes, delay, &*protocol),
             current_round: 0,
             current_time: 0,
-            nodes,
+            nodes: NodeList::new(nodes),
             total_hashrate,
             end_round,
             rng,
@@ -134,11 +145,11 @@ impl BlockchainSimulator {
         self.event_queue.pop().map(|(task, _)| task)
     }
 
-    fn propagation_time(&self, from: usize, to: usize) -> i64 {
+    fn propagation_time(&self, from: NodeId, to: NodeId) -> i64 {
         if from == to { 0 } else { self.env.delay }
     }
 
-    pub fn enqueue_actions(&mut self, node_id: usize, actions: &[Action]) {
+    pub fn enqueue_actions(&mut self, node_id: NodeId, actions: &[Action]) {
         // アクションを発行した時間
         // アクションの完了時間にタスクがエンキューされる
         let base_time = self.current_time;
@@ -177,11 +188,12 @@ impl BlockchainSimulator {
                         self.current_time,
                         &self.env,
                     );
+                    let minter_hashrate = self.nodes.get_node(minter).hashrate();
                     let next_mining_time = base_time
                         + self.protocol.calculate_generation_time(
                             &mut self.rng,
                             new_difficulty,
-                            self.nodes[minter].hashrate(),
+                            minter_hashrate,
                         );
 
                     // すでにキューにある同じノードのマイニングタスクを削除
@@ -201,7 +213,7 @@ impl BlockchainSimulator {
                     let new_block = Block::new(
                         mining_base_block.height() + 1,
                         Some(prev_block_id),
-                        minter as i32,
+                        minter,
                         self.current_time,
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         self.env.blockchain.next_block_id(),
@@ -267,24 +279,29 @@ impl BlockchainSimulator {
     }
 
     fn enqueue_first_mining_task(&mut self) {
-        for node_id in 0..self.nodes.len() {
-            let actions = vec![Action::RestartMining {
-                prev_block_id: GENESIS_BLOCK_ID,
-            }];
-            self.enqueue_actions(node_id, &actions);
+        let mut actions: Vec<(NodeId, Action)> = vec![];
+        for node_id in self.env.nodes() {
+            actions.push((
+                *node_id,
+                Action::RestartMining {
+                    prev_block_id: GENESIS_BLOCK_ID,
+                },
+            ));
+        }
+        for (node_id, action) in actions {
+            self.enqueue_actions(node_id, &[action]);
         }
     }
 
-    fn handle_block_generation(&mut self, minter: usize, block_id: BlockId) {
+    fn handle_block_generation(&mut self, minter: NodeId, block_id: BlockId) {
         let new_block = self.env.blockchain.get_block(block_id).unwrap();
 
         // コールバックを呼び出してタスクをスケジュール
-        let actions = self.nodes[minter].mining_strategy_mut().on_mining_block(
-            block_id,
-            self.current_time,
-            &self.env,
-            minter,
-        );
+        let actions = self
+            .nodes
+            .get_node_mut(minter)
+            .mining_strategy_mut()
+            .on_mining_block(block_id, self.current_time, &self.env, minter);
 
         if self.current_round < new_block.height() {
             self.current_round = new_block.height();
@@ -301,14 +318,13 @@ impl BlockchainSimulator {
         self.enqueue_actions(minter, &actions);
     }
 
-    fn handle_propagation(&mut self, from: usize, to: usize, block_id: BlockId) {
+    fn handle_propagation(&mut self, from: NodeId, to: NodeId, block_id: BlockId) {
         // コールバックを呼び出してタスクをスケジュール
-        let actions = self.nodes[to].mining_strategy_mut().on_receiving_block(
-            block_id,
-            self.current_time,
-            &self.env,
-            to,
-        );
+        let actions = self
+            .nodes
+            .get_node_mut(to)
+            .mining_strategy_mut()
+            .on_receiving_block(block_id, self.current_time, &self.env, to);
         self.enqueue_actions(to, &actions);
 
         log::trace!(
@@ -323,7 +339,11 @@ impl BlockchainSimulator {
     pub fn print_hashrates(&self) {
         log::info!(
             "hashrates: {:?}",
-            self.nodes.iter().map(|n| n.hashrate()).collect::<Vec<_>>()
+            self.nodes
+                .nodes()
+                .iter()
+                .map(|n| n.hashrate())
+                .collect::<Vec<_>>()
         );
     }
 
@@ -370,30 +390,27 @@ impl BlockchainSimulator {
         let main_chain = self.env.blockchain.get_main_chain();
 
         // 各ノードの報酬をカウント（ジェネシスブロックを除く）
-        let mut rewards: Vec<f64> = vec![0.0; self.nodes.len()];
+        let mut rewards: HashMap<NodeId, f64> = HashMap::new();
 
         for &block_id in &main_chain {
             if let Some(block) = self.env.blockchain.get_block(block_id) {
                 let minter = block.minter();
-                if minter >= 0 {
-                    let node_id = minter as usize;
-                    if node_id < rewards.len() {
-                        rewards[node_id] += 1.0;
-                    }
+                if minter != NodeId::dummy() {
+                    *rewards.entry(minter).or_insert(0.0) += 1.0;
                 }
             }
         }
 
         // 全ノードの報酬の合計を計算
-        let total_reward: f64 = rewards.iter().sum();
+        let total_reward: f64 = rewards.values().sum::<f64>();
 
         // mining fairness = rewardのシェア / hashrateのシェア を計算
-        let mut fairness_data: Vec<(usize, f64, f64, f64, f64, f64)> = self
+        let mut fairness_data: Vec<(NodeId, f64, f64, f64, f64, f64)> = self
             .nodes
+            .nodes()
             .iter()
-            .enumerate()
-            .map(|(i, node)| {
-                let reward = rewards[i];
+            .map(|node| {
+                let reward = *rewards.get(&node.id()).unwrap_or(&0.0);
                 let hashrate = node.hashrate() as f64;
 
                 // rewardのシェア = そのノードの報酬 / 全ノードの報酬の合計
@@ -417,7 +434,14 @@ impl BlockchainSimulator {
                     0.0
                 };
 
-                (i, reward, hashrate, reward_share, hashrate_share, fairness)
+                (
+                    node.id(),
+                    reward,
+                    hashrate,
+                    reward_share,
+                    hashrate_share,
+                    fairness,
+                )
             })
             .collect();
 
@@ -425,13 +449,13 @@ impl BlockchainSimulator {
         fairness_data.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap_or(std::cmp::Ordering::Equal));
 
         // ノード数が30以下の場合は全て表示、それ以上の場合は上位5位のみ表示
-        let display_count = if self.nodes.len() <= 30 {
-            self.nodes.len()
+        let display_count = if self.nodes.nodes().len() <= 30 {
+            self.nodes.nodes().len()
         } else {
             30
         };
 
-        if display_count == self.nodes.len() {
+        if display_count == self.nodes.nodes().len() {
             log::info!("Mining Fairness Ranking (all nodes):");
         } else {
             log::info!("Mining Fairness Ranking (top {}):", display_count);
@@ -446,7 +470,7 @@ impl BlockchainSimulator {
         for (rank, (node_id, _reward, _hashrate, reward_share, hashrate_share, fairness)) in
             fairness_data.iter().take(display_count).enumerate()
         {
-            let strategy_name = self.nodes[*node_id].mining_strategy().name();
+            let strategy_name = self.nodes.get_node(*node_id).mining_strategy().name();
             log::info!(
                 "{:4} | {:7} | {:10.2} | {:12.2} | {:24.6} | {}",
                 rank + 1,

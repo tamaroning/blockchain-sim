@@ -1,4 +1,4 @@
-use blockchain_sim::{BlockchainSimulator, NetworkProfile, ProtocolType};
+use blockchain_sim::{BlockchainSimulator, NetworkProfile, ProtocolType, node::NodeId};
 use clap::Parser;
 use rand::Rng;
 use std::{collections::HashMap, path::PathBuf};
@@ -115,12 +115,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(csv) = &mut output2 {
         let total_hashrate = simulator
             .nodes
+            .nodes()
             .iter()
-            .map(|node| node.hashrate)
+            .map(|node| node.hashrate())
             .sum::<i64>();
         let total_blocks = simulator.env.blockchain.len();
 
-        let mut node_rewards = HashMap::new();
+        let mut node_rewards = HashMap::<NodeId, usize>::new();
         simulator
             .env
             .blockchain
@@ -131,19 +132,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     unreachable!();
                 };
                 let minter = block.minter();
-                if minter >= 0 {
-                    let node_id = minter as usize;
+                if minter != NodeId::dummy() {
+                    let node_id = minter;
                     *node_rewards.entry(node_id).or_insert(0) += 1;
                 }
             });
 
-        for node in simulator.nodes.iter() {
+        for node in simulator.nodes.nodes() {
             let reward_share = node_rewards[&node.id] as f64 / total_blocks as f64;
             let hashrate_share = node.hashrate as f64 / total_hashrate as f64;
             let fairness = reward_share / hashrate_share;
 
             let record = blockchain_sim::types::NodeInfo {
-                node_id: node.id,
+                node_id: node.id.into_usize(),
                 strategy: node.mining_strategy.name().to_string(),
                 reward_share,
                 hashrate_share,

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{block::GENESIS_BLOCK_ID, blockchain::BlockId, simulator::Env};
+use crate::{block::GENESIS_BLOCK_ID, blockchain::BlockId, node::NodeId, simulator::Env};
 use serde::{Deserialize, Serialize};
 
 fn longest_chain(env: &Env, block1_id: BlockId, block2_id: BlockId) -> BlockId {
@@ -23,7 +23,7 @@ fn longest_chain(env: &Env, block1_id: BlockId, block2_id: BlockId) -> BlockId {
 
 pub enum Action {
     /// Propagate a block to a node.
-    Propagate { block_id: BlockId, to: usize },
+    Propagate { block_id: BlockId, to: NodeId },
     /// Reschedule a mining task.
     RestartMining { prev_block_id: BlockId },
 }
@@ -40,7 +40,7 @@ pub trait MiningStrategy: Send + Sync {
         _block_id: BlockId,
         _current_time: i64,
         _env: &Env,
-        _node_id: usize,
+        _node_id: NodeId,
     ) -> Vec<Action> {
         Vec::new()
     }
@@ -52,7 +52,7 @@ pub trait MiningStrategy: Send + Sync {
         _block_id: BlockId,
         _current_time: i64,
         _env: &Env,
-        _node_id: usize,
+        _node_id: NodeId,
     ) -> Vec<Action> {
         Vec::new()
     }
@@ -82,13 +82,16 @@ impl MiningStrategy for HonestMiningStrategy {
         block_id: BlockId,
         _current_time: i64,
         env: &Env,
-        _node_id: usize,
+        _node_id: NodeId,
     ) -> Vec<Action> {
         let mut actions = Vec::new();
 
         // Immediately schedule propagation tasks to all other nodes.
-        for node in 0..env.num_nodes {
-            actions.push(Action::Propagate { block_id, to: node });
+        for node in env.nodes() {
+            actions.push(Action::Propagate {
+                block_id,
+                to: *node,
+            });
         }
 
         // Schedule a new mining task.
@@ -103,7 +106,7 @@ impl MiningStrategy for HonestMiningStrategy {
         block_id: BlockId,
         _current_time: i64,
         env: &Env,
-        _node_id: usize,
+        _node_id: NodeId,
     ) -> Vec<Action> {
         let old_chain = self.current_block_id;
         self.current_block_id = longest_chain(env, self.current_block_id, block_id);
@@ -179,10 +182,10 @@ impl SelfishMiningStrategy {
         } else {
             let mut actions = vec![];
             self.published_blocks.insert(block);
-            for node in 0..env.num_nodes {
+            for node in env.nodes() {
                 actions.push(Action::Propagate {
                     block_id: block,
-                    to: node,
+                    to: *node,
                 });
             }
             actions
@@ -200,7 +203,7 @@ impl MiningStrategy for SelfishMiningStrategy {
         block_id: BlockId,
         _current_time: i64,
         env: &Env,
-        _node_id: usize,
+        _node_id: NodeId,
     ) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -242,7 +245,7 @@ impl MiningStrategy for SelfishMiningStrategy {
         block_id: BlockId,
         _current_time: i64,
         env: &Env,
-        _node_id: usize,
+        _node_id: NodeId,
     ) -> Vec<Action> {
         let mut actions = Vec::new();
 

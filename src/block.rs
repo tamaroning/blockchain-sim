@@ -1,4 +1,4 @@
-use crate::{Protocol, blockchain::BlockId};
+use crate::{Protocol, blockchain::BlockId, node::NodeId};
 
 pub const GENESIS_BLOCK_ID: BlockId = BlockId::new(0);
 
@@ -7,7 +7,7 @@ pub const GENESIS_BLOCK_ID: BlockId = BlockId::new(0);
 pub struct Block {
     height: i64,
     prev_block_id: Option<BlockId>,
-    minter: i32,
+    minter: NodeId,
     time: i64,
     rand: i64,
     id: BlockId,
@@ -21,7 +21,7 @@ impl Block {
     pub fn new(
         height: i64,
         prev_block_id: Option<BlockId>,
-        minter: i32,
+        minter: NodeId,
         time: i64,
         rand: i64,
         id: BlockId,
@@ -44,7 +44,7 @@ impl Block {
         Self {
             height: 0,
             prev_block_id: None,
-            minter: -1,
+            minter: NodeId::dummy(),
             time: 0,
             rand: 0,
             id: GENESIS_BLOCK_ID,
@@ -65,7 +65,7 @@ impl Block {
         self.difficulty
     }
 
-    pub fn minter(&self) -> i32 {
+    pub fn minter(&self) -> NodeId {
         self.minter
     }
 
