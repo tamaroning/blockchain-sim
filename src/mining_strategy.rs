@@ -228,7 +228,7 @@ impl MiningStrategy for SelfishMiningStrategy {
             // Publish all the blocks in the private chain.
             // This node can win due to the lead of 1 block.
             for private_block_id in self.get_private_branch(env) {
-                self.publish_block(private_block_id, env);
+                actions.extend(self.publish_block(private_block_id, env));
             }
             self.private_branch_len = 0;
         }
@@ -275,18 +275,18 @@ impl MiningStrategy for SelfishMiningStrategy {
             // publish the last block of the private chain.
             // Now the same length. Try our luck.
             let published_block_id = self.get_last_private_block();
-            self.publish_block(published_block_id, env);
+            actions.extend(self.publish_block(published_block_id, env));
         } else if delta_prev == 2 {
             // Publish all the blocks in the private chain.
             // This node can win due to the lead of 1 block.
             for private_block_id in self.get_private_branch(env) {
-                self.publish_block(private_block_id, env);
+                actions.extend(self.publish_block(private_block_id, env));
             }
             self.private_branch_len = 0;
         } else {
             // Publish the first unpublished block in the private chain.
             let published_block_id = self.get_first_unpublished_private_block(env);
-            self.publish_block(published_block_id, env);
+            actions.extend(self.publish_block(published_block_id, env));
         }
         actions
     }
