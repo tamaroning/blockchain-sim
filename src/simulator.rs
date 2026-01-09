@@ -151,9 +151,10 @@ impl BlockchainSimulator {
 
     pub fn enqueue_actions(&mut self, node_id: NodeId, actions: &[Action]) {
         // アクションを発行した時間
-        // アクションの完了時間にタスクがエンキューされる
+        // アクションの完了時間に対応するイベントがイベントキューにエンキューされる
         let base_time = self.current_time;
         for action in actions {
+            // actionに対応するイベントタイプを作成
             let mut event_type = match action {
                 Action::Propagate { block_id, to } => {
                     // Avoid self-propagation.
@@ -169,11 +170,12 @@ impl BlockchainSimulator {
                 Action::RestartMining { prev_block_id } => EventType::BlockGeneration {
                     minter: node_id,
                     prev_block_id: *prev_block_id,
-                    // Dummy. We set it to proper value at the end of the function.
+                    // Dummy. We set it to proper value later in this function.
                     block_id: GENESIS_BLOCK_ID,
                 },
             };
 
+            // イベントキューへのイベントのエンキューと、イベントキューのクリーンアップ(必要なら)
             match event_type {
                 EventType::BlockGeneration {
                     minter,
@@ -214,7 +216,7 @@ impl BlockchainSimulator {
                         mining_base_block.height() + 1,
                         Some(prev_block_id),
                         minter,
-                        self.current_time,
+                        next_mining_time,
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         self.env.blockchain.next_block_id(),
                         new_difficulty,

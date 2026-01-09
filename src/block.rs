@@ -8,7 +8,9 @@ pub struct Block {
     height: i64,
     prev_block_id: Option<BlockId>,
     minter: NodeId,
+    /// timestamp
     time: i64,
+    /// Random number for block selection
     rand: i64,
     id: BlockId,
     /// Difficulty
