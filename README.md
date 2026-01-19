@@ -23,6 +23,9 @@ RUST_LOG="info" cargo run --release -- --end-round 10000 --protocol ethereum --n
 
 # Selfish mining experiment
 RUST_LOG="info" cargo run --release -- --profile examples/selfish.json --end-round 100000
+
+# Timewarp
+RUST_LOG="info" cargo run --release -- --end-round 10000 --protocol bitcoin --profile examples/timewarp.json
 ```
 
 ## Experiments
