@@ -105,6 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let block = simulator.env.blockchain.get_block(block).unwrap();
             let record = blockchain_sim::types::Record {
                 round: block.height() as u32,
+                timestamp: block.time(),
                 difficulty: block.difficulty(),
                 mining_time: block.mining_time,
             };

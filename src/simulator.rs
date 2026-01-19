@@ -191,12 +191,12 @@ impl BlockchainSimulator {
                         &self.env,
                     );
                     let minter_hashrate = self.nodes.get_node(minter).hashrate();
-                    let next_mining_time = base_time
-                        + self.protocol.calculate_generation_time(
-                            &mut self.rng,
-                            new_difficulty,
-                            minter_hashrate,
-                        );
+                    let generation_time = self.protocol.calculate_generation_time(
+                        &mut self.rng,
+                        new_difficulty,
+                        minter_hashrate,
+                    );
+                    let next_mining_time = base_time + generation_time;
 
                     // すでにキューにある同じノードのマイニングタスクを削除
                     self.event_queue.retain(|task, _| {
@@ -214,20 +214,22 @@ impl BlockchainSimulator {
                     // ブロックを作成
                     let new_block_id = self.env.blockchain.next_block_id();
                     let node = self.nodes.get_node(minter);
+                    let new_block_height = mining_base_block.height() + 1;
                     let timestamp = node.mining_strategy().handle_timestamp(
                         next_mining_time,
                         new_block_id,
+                        new_block_height,
                         &self.env,
                     );
                     let new_block = Block::new(
-                        mining_base_block.height() + 1,
+                        new_block_height,
                         Some(prev_block_id),
                         minter,
                         timestamp,
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         new_block_id,
                         new_difficulty,
-                        self.current_time - mining_base_block.time(),
+                        generation_time,
                     );
 
                     if new_difficulty != mining_base_block.difficulty() {

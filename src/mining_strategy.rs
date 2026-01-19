@@ -60,7 +60,13 @@ pub trait MiningStrategy: Send + Sync {
         Vec::new()
     }
 
-    fn handle_timestamp(&self, timestamp: i64, _block_id: BlockId, _env: &Env) -> i64 {
+    fn handle_timestamp(
+        &self,
+        timestamp: i64,
+        _block_id: BlockId,
+        _block_height: i64,
+        _env: &Env,
+    ) -> i64 {
         timestamp
     }
 }
@@ -91,6 +97,8 @@ impl MiningStrategy for HonestMiningStrategy {
         env: &Env,
         _node_id: NodeId,
     ) -> Vec<Action> {
+        self.current_block_id = block_id;
+
         let mut actions = Vec::new();
 
         // Immediately schedule propagation tasks to all other nodes.
@@ -129,7 +137,13 @@ impl MiningStrategy for HonestMiningStrategy {
         }
     }
 
-    fn handle_timestamp(&self, timestamp: i64, block_id: BlockId, env: &Env) -> i64 {
+    fn handle_timestamp(
+        &self,
+        timestamp: i64,
+        _block_id: BlockId,
+        _block_height: i64,
+        env: &Env,
+    ) -> i64 {
         timestamp
     }
 }
@@ -328,6 +342,7 @@ impl MiningStrategy for TimewarpStrategy {
         env: &Env,
         _node_id: NodeId,
     ) -> Vec<Action> {
+        self.current_block_id = block_id;
         let mut actions = Vec::new();
 
         // Immediately schedule propagation tasks to all other nodes.
@@ -366,15 +381,17 @@ impl MiningStrategy for TimewarpStrategy {
         }
     }
 
-    fn handle_timestamp(&self, original_timestamp: i64, _block_id: BlockId, env: &Env) -> i64 {
+    fn handle_timestamp(
+        &self,
+        original_timestamp: i64,
+        _block_id: BlockId,
+        block_height: i64,
+        env: &Env,
+    ) -> i64 {
         // 2015ブロック目で大きな値にする
         // それ以外はMTP+1を設定する
-        let current_height = env
-            .blockchain
-            .get_block(self.current_block_id)
-            .unwrap()
-            .height();
-        if current_height % 2016 == 2015 {
+
+        if block_height % 2016 == 2015 {
             let two_hour_ms = 2 * 60 * 60 * 1000;
             return original_timestamp + two_hour_ms as i64;
         }
