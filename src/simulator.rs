@@ -185,11 +185,9 @@ impl BlockchainSimulator {
                     let mining_base_block = self.env.blockchain.get_block(prev_block_id).unwrap();
 
                     // Difficulty adjustment
-                    let new_difficulty = self.protocol.calculate_difficulty(
-                        mining_base_block,
-                        self.current_time,
-                        &self.env,
-                    );
+                    let new_difficulty = self
+                        .protocol
+                        .calculate_difficulty(mining_base_block, &self.env);
                     let minter_hashrate = self.nodes.get_node(minter).hashrate();
                     let generation_time = self.protocol.calculate_generation_time(
                         &mut self.rng,

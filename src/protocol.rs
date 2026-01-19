@@ -4,14 +4,10 @@ use rand::rngs::StdRng;
 use rand_distr::Distribution;
 use rand_distr::Exp;
 
-const BTC_DAA_EPOCH: i64 = 2016;
-/// BTCの目標生成時間 (ms)
-const BTC_TARGET_GENERATION_TIME: i64 = 600_000;
-
 pub trait Protocol: Send + Sync {
     fn name(&self) -> &'static str;
     fn default_difficulty(&self) -> f64;
-    fn calculate_difficulty(&self, parent_block: &Block, current_time: i64, env: &Env) -> f64;
+    fn calculate_difficulty(&self, parent_block: &Block, env: &Env) -> f64;
     fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64;
 }
 
@@ -29,7 +25,11 @@ impl Protocol for BitcoinProtocol {
         1.
     }
 
-    fn calculate_difficulty(&self, parent_block: &Block, current_time: i64, env: &Env) -> f64 {
+    fn calculate_difficulty(&self, parent_block: &Block, env: &Env) -> f64 {
+        const BTC_DAA_EPOCH: i64 = 2016;
+        /// BTCの目標生成時間 (ms)
+        const BTC_TARGET_GENERATION_TIME: i64 = 600_000;
+
         let parent_block_id = parent_block.id();
         let parent_difficulty = parent_block.difficulty();
         let parent_height = parent_block.height();
@@ -48,8 +48,9 @@ impl Protocol for BitcoinProtocol {
             };
             // 実際は2015ブロック分で計算する
             // 2016ブロックの難易度調整は, 0~2015ブロックのブロック間の平均生成時間で行う(2015区間)
-            let average_generation_time =
-                (current_time - first_block_in_epoch.time()) as f64 / (BTC_DAA_EPOCH - 1) as f64;
+            let average_generation_time = (parent_block.time() - first_block_in_epoch.time())
+                as f64
+                / (BTC_DAA_EPOCH - 1) as f64;
             let ratio = average_generation_time / BTC_TARGET_GENERATION_TIME as f64;
             let ratio = ratio.max(0.25).min(4.0);
 
@@ -83,12 +84,16 @@ impl Protocol for EthereumProtocol {
         2f64.powi(32)
     }
 
-    fn calculate_difficulty(&self, parent_block: &Block, current_time: i64, _env: &Env) -> f64 {
-        if parent_block.height() == 0 {
+    fn calculate_difficulty(&self, parent_block: &Block, _env: &Env) -> f64 {
+        if parent_block.height() <= 1 {
             return self.default_difficulty();
         }
+        let grand_parent_block = _env
+            .blockchain
+            .get_block(parent_block.prev_block_id().unwrap())
+            .unwrap();
 
-        let time_diff = (current_time - parent_block.time()) / 1_000; // ms to s
+        let time_diff = (parent_block.time() - grand_parent_block.time()) / 1_000; // ms to s
         let adjustment_factor = (1 - (time_diff / 10)).max(-99);
         let difficulty_adjustment = (parent_block.difficulty() / 2048.) as i64 * adjustment_factor;
 
