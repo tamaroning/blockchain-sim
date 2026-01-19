@@ -1,6 +1,8 @@
+use serde::Serialize;
+
 use crate::mining_strategy::MiningStrategy;
 
-#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Serialize)]
 pub struct NodeId(usize);
 
 impl NodeId {

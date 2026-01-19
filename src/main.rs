@@ -108,6 +108,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 timestamp: block.time(),
                 difficulty: block.difficulty(),
                 mining_time: block.mining_time,
+                minter: block.minter(),
             };
             csv.serialize(&record).unwrap();
         }
