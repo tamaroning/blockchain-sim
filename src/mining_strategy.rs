@@ -63,7 +63,7 @@ pub trait MiningStrategy: Send + Sync {
     fn handle_timestamp(
         &self,
         timestamp: i64,
-        _block_id: BlockId,
+        parent_block_id: BlockId,
         _block_height: i64,
         _env: &Env,
     ) -> i64 {
@@ -140,9 +140,9 @@ impl MiningStrategy for HonestMiningStrategy {
     fn handle_timestamp(
         &self,
         timestamp: i64,
-        _block_id: BlockId,
+        _parent_block_id: BlockId,
         _block_height: i64,
-        env: &Env,
+        _env: &Env,
     ) -> i64 {
         timestamp
     }
@@ -384,7 +384,7 @@ impl MiningStrategy for TimewarpStrategy {
     fn handle_timestamp(
         &self,
         original_timestamp: i64,
-        _block_id: BlockId,
+        parent_block_id: BlockId,
         block_height: i64,
         env: &Env,
     ) -> i64 {
@@ -399,14 +399,16 @@ impl MiningStrategy for TimewarpStrategy {
         // Calculate the median of the past 11 block timestamps (MTP).
         // 過去11ブロックのタイムスタンプの中央値を取得
         // 本シミュレータはタイムスタンプをミリセカンドで管理することに注意
-        let mut timestamps = env
+        let mut last_11_block_timestamps = env
             .blockchain
-            .blocks()
+            .get_last_n_blocks(parent_block_id, 10)
             .iter()
-            .rev()
-            .take(11)
             .map(|b| b.time())
             .collect::<Vec<i64>>();
+        let _11th_block_timestamp = env.blockchain.get_block(parent_block_id).unwrap().time();
+        last_11_block_timestamps.push(_11th_block_timestamp);
+        let mut timestamps = last_11_block_timestamps;
+
         timestamps.sort();
         let len = timestamps.len();
         let median = if len == 0 {

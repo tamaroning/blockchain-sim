@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Protocol, block::{Block, GENESIS_BLOCK_ID}};
+use crate::{
+    Protocol,
+    block::{Block, GENESIS_BLOCK_ID},
+};
 use std::sync::atomic::AtomicUsize;
 
 #[derive(Clone, Copy, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
@@ -48,8 +51,27 @@ impl Blockchain {
         self.blocks.get_mut(id.0)
     }
 
+    /// Get all blocks including orphan blocks.
     pub fn blocks(&self) -> &[Block] {
         &self.blocks
+    }
+
+    /// blockの祖先nブロックを返す　(block_id自身は含まない)
+    /// blockの高さがnより小さい場合は、blockの全ての祖先ブロックを返す。
+    pub fn get_last_n_blocks(&self, block_id: BlockId, n: usize) -> Vec<&Block> {
+        let mut blocks = Vec::new();
+        let mut current_block = self.get_block(block_id).unwrap();
+
+        for _ in 0..n {
+            if let Some(prev_block_id) = current_block.prev_block_id() {
+                current_block = self.get_block(prev_block_id).unwrap();
+                blocks.push(current_block);
+            } else {
+                break;
+            }
+        }
+        assert!(!blocks.iter().any(|b| b.id() == block_id));
+        blocks
     }
 
     pub fn len(&self) -> usize {

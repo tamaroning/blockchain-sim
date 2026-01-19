@@ -210,12 +210,11 @@ impl BlockchainSimulator {
                     });
 
                     // ブロックを作成
-                    let new_block_id = self.env.blockchain.next_block_id();
                     let node = self.nodes.get_node(minter);
                     let new_block_height = mining_base_block.height() + 1;
                     let timestamp = node.mining_strategy().handle_timestamp(
                         next_mining_time,
-                        new_block_id,
+                        prev_block_id,
                         new_block_height,
                         &self.env,
                     );
@@ -225,7 +224,7 @@ impl BlockchainSimulator {
                         minter,
                         timestamp,
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
-                        new_block_id,
+                        self.env.blockchain.next_block_id(),
                         new_difficulty,
                         generation_time,
                     );
