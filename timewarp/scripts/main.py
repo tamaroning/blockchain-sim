@@ -17,8 +17,13 @@ def parse_inputs(
     """
     if not raw_inputs:
         return [
-            ("honest-honest", base_dir / "results/honest.csv"),
-            ("honest-timewarp", base_dir / "results/timewarp.csv"),
+            ("honest", base_dir / "results/honest.csv"),
+            ("timewarp50", base_dir / "results/timewarp50.csv"),
+            ("timewarp60", base_dir / "results/timewarp60.csv"),
+            ("timewarp70", base_dir / "results/timewarp70.csv"),
+            ("timewarp80", base_dir / "results/timewarp80.csv"),
+            ("timewarp90", base_dir / "results/timewarp90.csv"),
+            ("timewarp100", base_dir / "results/test.csv"),
         ]
 
     parsed: List[Tuple[str, Path]] = []
@@ -46,7 +51,10 @@ def load_series(label: str, csv_path: Path) -> Tuple[pd.Series, pd.Series]:
 
 
 def plot_difficulty(
-    datasets: Iterable[Tuple[str, Path]], output_path: Path | None, show: bool
+    datasets: Iterable[Tuple[str, Path]],
+    output_path: Path | None,
+    show: bool,
+    log_y: bool,
 ) -> None:
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -57,6 +65,8 @@ def plot_difficulty(
     ax.set_xlabel("Block height")
     ax.set_ylabel("Difficulty")
     ax.set_title("Difficulty over block height")
+    if log_y:
+        ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
     ax.legend()
     fig.tight_layout()
@@ -94,6 +104,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="プロットを画面表示する場合に指定します。",
     )
+    parser.add_argument(
+        "--log-y",
+        action="store_true",
+        help="縦軸を対数スケールにします。",
+        default=True,
+    )
     return parser
 
 
@@ -107,7 +123,9 @@ def main() -> None:
     default_output = base_dir / "results/difficulty.png"
     output_path = args.output or default_output
 
-    plot_difficulty(datasets, output_path=output_path, show=args.show)
+    plot_difficulty(
+        datasets, output_path=output_path, show=args.show, log_y=args.log_y
+    )
 
 
 if __name__ == "__main__":
