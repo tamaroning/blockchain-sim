@@ -230,10 +230,12 @@ impl BlockchainSimulator {
                     );
 
                     if new_difficulty != mining_base_block.difficulty() {
+                        let rate = new_difficulty as f64 / mining_base_block.difficulty() as f64;
                         log::debug!(
-                            "DAA: {} -> {} @ round {}, block ID: {}",
+                            "DAA: {:e} -> {:e} (rate: {:.2}) @ round {}, block ID: {}",
                             mining_base_block.difficulty(),
                             new_difficulty,
+                            rate,
                             mining_base_block.height(),
                             new_block.id(),
                         );
