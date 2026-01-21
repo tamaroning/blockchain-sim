@@ -66,25 +66,27 @@ def main():
     print(f"  D_{last['k']}/D_{last['k']+1}  ≈ {last['D_k/D_{k+1}']:.12f}")
 
     # Plot D_k and A_k over k
+    SECS_PER_WEEK = 7.0 * 24.0 * 60.0 * 60.0
     ks = [r["k"] for r in rows]
     Ds = [r["D_k"] for r in rows]
-    As = [r["A_k"] for r in rows]
+    As_weeks = [r["A_k"] / SECS_PER_WEEK for r in rows]
+    T_weeks = T / SECS_PER_WEEK
+    A_limit_weeks = As_weeks[-1]
 
     fig, ax_left = plt.subplots(figsize=(9, 5))
     ax_right = ax_left.twinx()
 
     # 左軸に難易度D_k、右軸にA_k
     left_line = ax_left.plot(ks, Ds, marker="o", color="tab:blue", label="D_k")[0]
-    right_line = ax_right.plot(ks, As, marker="o", color="tab:red", label="A_k")[0]
+    right_line = ax_right.plot(ks, As_weeks, marker="o", color="tab:red", label="A_k")[0]
 
     ax_left.set_xlabel("k")
     ax_left.set_ylabel("D_k (difficulty)", color=left_line.get_color())
-    ax_right.set_ylabel("A_k (apparent epoch time seen by other miners)", color=right_line.get_color())
+    ax_right.set_ylabel("A_k (weeks, apparent epoch time)", color=right_line.get_color())
 
     # デフォルトで対数スケール、--linear指定時のみ線形
     if not args.linear:
         ax_left.set_yscale("log")
-        ax_right.set_yscale("log")
 
     # Grid: x方向（縦線）だけにして、基準線と紛れないようにする
     ax_left.grid(True, axis="x", linestyle="--", alpha=0.35)
@@ -93,7 +95,7 @@ def main():
 
     # Reference line for A_k: target epoch time T (= 2 weeks)
     ref_line = ax_right.axhline(
-        T,
+        T_weeks,
         color="gray",
         linestyle=":",
         linewidth=1.5,
@@ -101,13 +103,27 @@ def main():
         label="T (2 weeks)",
     )
 
+    # Convergence value (right axis): ensure it appears as a tick
+    limit_line = ax_right.axhline(
+        A_limit_weeks,
+        color="tab:red",
+        linestyle="--",
+        linewidth=1.2,
+        alpha=0.6,
+        label=f"A∞ ≈ {A_limit_weeks:.6g} weeks",
+    )
+    yticks = list(ax_right.get_yticks())
+    yticks.extend([T_weeks, A_limit_weeks])
+    yticks = sorted({t for t in yticks if t > 0})
+    ax_right.set_yticks(yticks)
+
     # 個別凡例を統合
-    lines = [left_line, right_line, ref_line]
+    lines = [left_line, right_line, ref_line, limit_line]
     labels = [l.get_label() for l in lines]
     ax_left.legend(lines, labels, loc="best")
 
     fig.suptitle(
-        "D_k and A_k over k\nA_k: apparent epoch elapsed time as seen by other miners",
+        "D_k and A_k over k (A_k: apparent epoch elapsed time)",
         y=1.02,
     )
     fig.tight_layout()

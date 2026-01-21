@@ -11,3 +11,7 @@ done
 uv run scripts/main.py
 ```
 
+
+```sh
+RUST_LOG="debug" cargo run --release -- --end-round 40000 --protocol bitcoin --profile profiles/test.json 
+```
