@@ -22,7 +22,10 @@ impl Protocol for BitcoinProtocol {
     }
 
     fn default_difficulty(&self) -> f64 {
-        1.
+        // FIXME: 適切な値を考える
+        // とりあえず、hashrate合計が100のときに、1epochが2週間くらいになるように設定しておく
+        let total_hashrate = 100.;
+        total_hashrate * 600_000. / (1u64 << 32) as f64
     }
 
     fn calculate_difficulty(&self, parent_block: &Block, env: &Env) -> f64 {
@@ -46,6 +49,13 @@ impl Protocol for BitcoinProtocol {
                 }
                 block
             };
+            // 見かけでかかった時間
+            let apparent_epoch_time = parent_block.time() - first_block_in_epoch.time();
+            // in week
+            let apparent_epoch_time_in_week: f64 =
+                apparent_epoch_time as f64 / (7 * 24 * 60 * 60 * 1000) as f64;
+            log::debug!("見かけでかかった時間: {:.2}週", apparent_epoch_time_in_week);
+
             // 実際は2015ブロック分で計算する
             // 2016ブロックの難易度調整は, 0~2015ブロックのブロック間の平均生成時間で行う(2015区間)
             let average_generation_time = (parent_block.time() - first_block_in_epoch.time())

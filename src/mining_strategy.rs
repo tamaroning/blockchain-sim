@@ -390,10 +390,12 @@ impl MiningStrategy for TimewarpStrategy {
     ) -> i64 {
         // 2015ブロック目で大きな値にする
         // それ以外はMTP+1を設定する
-
+        
         if block_height % 2016 == 2015 {
-            let two_hour_ms = 2 * 60 * 60 * 1000;
-            return original_timestamp + two_hour_ms as i64;
+            // 2hだけタイムスタンプを後ろにずらす
+            //let two_hour_ms = 2 * 60 * 60 * 1000;
+            //return original_timestamp + two_hour_ms as i64;
+            return original_timestamp;
         }
 
         // Calculate the median of the past 11 block timestamps (MTP).
@@ -414,7 +416,8 @@ impl MiningStrategy for TimewarpStrategy {
         let median = if len == 0 {
             unreachable!("No blocks in the blockchain")
         } else if len % 2 == 0 {
-            (timestamps[len / 2 - 1] + timestamps[len / 2]) / 2
+            // BTCの場合、偶数の場合は中央値の1つ前の値を返す (中央2つの平均をとらないことに注意)
+            timestamps[len / 2]
         } else {
             timestamps[len / 2]
         };
