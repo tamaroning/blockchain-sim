@@ -390,12 +390,11 @@ impl MiningStrategy for TimewarpStrategy {
     ) -> i64 {
         // 2015ブロック目で大きな値にする
         // それ以外はMTP+1を設定する
-        
+
         if block_height % 2016 == 2015 {
             // 2hだけタイムスタンプを後ろにずらす
-            //let two_hour_ms = 2 * 60 * 60 * 1000;
-            //return original_timestamp + two_hour_ms as i64;
-            return original_timestamp;
+            let two_hour_ms = 2 * 60 * 60 * 1000;
+            return original_timestamp + two_hour_ms as i64;
         }
 
         // Calculate the median of the past 11 block timestamps (MTP).
