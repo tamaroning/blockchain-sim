@@ -24,7 +24,7 @@ def parse_inputs(
             ("timewarp70", base_dir / "results/timewarp70.csv"),
             ("timewarp80", base_dir / "results/timewarp80.csv"),
             ("timewarp90", base_dir / "results/timewarp90.csv"),
-            ("timewarp100", base_dir / "results/test.csv"),
+            ("timewarp100", base_dir / "results/timewarp100.csv"),
         ]
 
     parsed: List[Tuple[str, Path]] = []
