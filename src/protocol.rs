@@ -11,6 +11,15 @@ pub trait Protocol: Send + Sync {
     fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64;
 }
 
+fn check_difficulty(difficulty: f64) {
+    if !difficulty.is_finite() {
+        panic!("difficulty became non-finite ({}).", difficulty);
+    }
+    if difficulty == 0.0 {
+        panic!("difficulty underflowed to 0.0 (likely f64 underflow).");
+    }
+}
+
 /// Bitcoin Protocol
 /// expected generation time = expected required hash / hashrate
 /// expected required hash = D * 2^32
@@ -49,6 +58,7 @@ impl Protocol for BitcoinProtocol {
                 }
                 block
             };
+            // TODO: remove this
             // 見かけでかかった時間
             let apparent_epoch_time = parent_block.time() - first_block_in_epoch.time();
             // in week
@@ -69,8 +79,8 @@ impl Protocol for BitcoinProtocol {
         } else {
             parent_difficulty
         };
-
-        new_difficulty as f64
+        check_difficulty(new_difficulty);
+        new_difficulty
     }
 
     fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64 {
@@ -111,6 +121,7 @@ impl Protocol for EthereumProtocol {
 
         let new_difficulty =
             parent_block.difficulty() as i64 + difficulty_adjustment + uncle_adjustment;
+        let new_difficulty = new_difficulty as f64;
 
         /*
         if new_difficulty - parent_block.difficulty() as i64 > 1 {
@@ -129,7 +140,8 @@ impl Protocol for EthereumProtocol {
             );
         }
         */
-        new_difficulty as f64
+        check_difficulty(new_difficulty);
+        new_difficulty
     }
 
     fn calculate_generation_time(&self, rng: &mut StdRng, difficulty: f64, hashrate: i64) -> i64 {
