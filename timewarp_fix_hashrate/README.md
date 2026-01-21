@@ -14,10 +14,10 @@ uv sync  # まだであれば
 
 ```sh
 cd timewarp_fix_hashrate
-uv run timewarp_fix_hashrate/scripts/main.py \
-  --runs 20 \
+uv run scripts/main.py \
+  --runs 10 \
   --hashrate 90 \
-  --end-round 40000 \
+  --end-round 120000 \
   --protocol bitcoin \
   --show
 ```
