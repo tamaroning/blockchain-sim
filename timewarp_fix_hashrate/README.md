@@ -14,10 +14,11 @@ uv sync  # まだであれば
 
 ```sh
 cd timewarp_fix_hashrate
+cargo build --release
 uv run scripts/main.py \
   --runs 10 \
   --hashrate 90 \
-  --end-round 120000 \
+  --end-round 80000 \
   --protocol bitcoin \
   --show
 ```
