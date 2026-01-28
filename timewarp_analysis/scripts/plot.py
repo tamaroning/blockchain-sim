@@ -1,3 +1,6 @@
+# uv run scripts/plot.py --samples 40 --target 0.5 --N 2016
+# uv run scripts/plot.py --samples 40 --target 0.99 --N 2015
+# uv run scripts/plot.py --samples 40 --target 0.9 --N 2015
 from __future__ import annotations
 
 import argparse

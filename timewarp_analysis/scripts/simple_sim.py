@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 
 # ---- パラメータ ----
 T = 2                      # target time (week)
-P_MTP_CONTROLLED = 0.5   # MTP control probability
-SLOW_CLOCK_SPEED = 2016 / 6 / (7 * 24 * 60 * 60) # slow clock speed (second/epoch)
-EPOCHS = 30
+P_MTP_CONTROLLED = 0.9   # MTP control probability
+SLOW_CLOCK_SPEED = (2016 / 6) / (7 * 24 * 60 * 60) # slow clock speed (second/epoch)
+EPOCHS = 300
 RUNS = 1
 CLAMP = True
 

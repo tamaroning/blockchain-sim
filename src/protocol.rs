@@ -31,16 +31,13 @@ impl Protocol for BitcoinProtocol {
     }
 
     fn default_difficulty(&self) -> f64 {
-        // FIXME: 適切な値を考える
-        // とりあえず、hashrate合計が100のときに、1epochが2週間くらいになるように設定しておく
-        let total_hashrate = 100.;
-        total_hashrate * 600_000. / (1u64 << 32) as f64
+        0.0069
     }
 
     fn calculate_difficulty(&self, parent_block: &Block, env: &Env) -> f64 {
         const BTC_DAA_EPOCH: i64 = 2016;
         /// BTCの目標生成時間 (ms)
-        const BTC_TARGET_GENERATION_TIME: i64 = 600_000;
+        const TWO_WEEKS_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
         let parent_block_id = parent_block.id();
         let parent_difficulty = parent_block.difficulty();
@@ -58,24 +55,30 @@ impl Protocol for BitcoinProtocol {
                 }
                 block
             };
-            // TODO: remove this
-            // 見かけでかかった時間
-            let apparent_epoch_time = parent_block.time() - first_block_in_epoch.time();
-            // in week
+            // Bitcoin-style retarget:
+            //   actual_timespan = last_timestamp - first_timestamp
+            //   actual_timespan is clamped to [expected/4, expected*4]
+            //   new_difficulty = old_difficulty * expected / actual_timespan
+            //
+            // Note: we intentionally do NOT take abs(). If timestamps go backwards
+            // (actual_timespan <= 0), clamping will pin it to the minimum timespan.
+            let mut actual_timespan_ms = parent_block.time() - first_block_in_epoch.time();
+
+            // TODO: remove this debug log
             let apparent_epoch_time_in_week: f64 =
-                apparent_epoch_time as f64 / (7 * 24 * 60 * 60 * 1000) as f64;
+                actual_timespan_ms as f64 / (7 * 24 * 60 * 60 * 1000) as f64;
             log::debug!("見かけでかかった時間: {:.2}週", apparent_epoch_time_in_week);
 
-            // 実際は2015ブロック分で計算する
-            // 2016ブロックの難易度調整は, 0~2015ブロックのブロック間の平均生成時間で行う(2015区間)
-            let average_generation_time = (parent_block.time() - first_block_in_epoch.time())
-                as f64
-                / (BTC_DAA_EPOCH - 1) as f64;
-            let ratio = average_generation_time / BTC_TARGET_GENERATION_TIME as f64;
-            let ratio = ratio.max(0.25).min(4.0);
+            // Bitcoinのretargetは常に timespan を [expected/4, expected*4] にclampする
+            let min_timespan_ms = TWO_WEEKS_MS / 4;
+            let max_timespan_ms = TWO_WEEKS_MS * 4;
+            if actual_timespan_ms < min_timespan_ms {
+                actual_timespan_ms = min_timespan_ms;
+            } else if actual_timespan_ms > max_timespan_ms {
+                actual_timespan_ms = max_timespan_ms;
+            }
 
-            let new_difficulty = parent_difficulty / ratio;
-            new_difficulty
+            parent_difficulty * (TWO_WEEKS_MS as f64) / (actual_timespan_ms as f64)
         } else {
             parent_difficulty
         };

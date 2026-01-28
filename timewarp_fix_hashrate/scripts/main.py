@@ -15,8 +15,8 @@ def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
     与えられたハッシュレートに対応する timewarp プロファイル JSON を
     timewarp_fix_hashrate/profiles/ 以下に生成（または上書き）してパスを返す。
     """
-    if not (0 < attacker_hashrate < 100):
-        raise ValueError("--hashrate は 1〜99 の整数で指定してください")
+    if not (0 <= attacker_hashrate <= 100):
+        raise ValueError("--hashrate は 0〜100 の整数で指定してください")
 
     defender_hashrate = 100 - attacker_hashrate
 
@@ -48,6 +48,7 @@ def run_one_simulation(
     run_index: int,
     attacker_hashrate: int,
     end_round: int,
+    delay: int | None,
     protocol: str,
     binary_path: Path,
     profile_path: Path,
@@ -66,6 +67,8 @@ def run_one_simulation(
         f"--profile={profile_path}",
         f"--output={output_csv}",
     ]
+    if delay is not None:
+        cmd.append(f"--delay={delay}")
 
     print(f"[run {run_index}] 実行コマンド: {' '.join(cmd)}")
 
@@ -154,7 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--hashrate",
         type=int,
         default=90,
-        help="timewarp ノードのハッシュレート [%]（1〜99、デフォルト: 90）",
+        help="timewarp ノードのハッシュレート [%]（0〜100、デフォルト: 90）",
     )
     parser.add_argument(
         "--end-round",
@@ -167,6 +170,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=str,
         default="bitcoin",
         help="Rust シミュレータの --protocol に渡す値（デフォルト: bitcoin）",
+    )
+    parser.add_argument(
+        "--delay",
+        type=int,
+        default=None,
+        help="Rust シミュレータの --delay に渡す値（ms）。省略時は Rust 側のデフォルトを使用",
     )
     parser.add_argument(
         "--binary",
@@ -237,6 +246,7 @@ def main() -> None:
             run_index=i,
             attacker_hashrate=attacker_hashrate,
             end_round=args.end_round,
+            delay=args.delay,
             protocol=args.protocol,
             binary_path=binary_path,
             profile_path=profile_path,
