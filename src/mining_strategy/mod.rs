@@ -3,10 +3,12 @@ use serde::{Deserialize, Serialize};
 
 mod honest;
 mod selfish;
+mod selfish_timewarp;
 mod timewarp;
 
 pub use honest::HonestMiningStrategy;
 pub use selfish::SelfishMiningStrategy;
+pub use selfish_timewarp::SelfishTimewarpStrategy;
 pub use timewarp::TimewarpStrategy;
 
 pub(crate) fn longest_chain(env: &Env, block1_id: BlockId, block2_id: BlockId) -> BlockId {
@@ -82,6 +84,7 @@ pub trait MiningStrategy: Send + Sync {
 pub enum MiningStrategyEnum {
     Honest,
     Selfish,
+    SelfishTimewarp,
     Timewarp,
 }
 
@@ -90,6 +93,7 @@ impl MiningStrategyEnum {
         match self {
             MiningStrategyEnum::Honest => Box::new(HonestMiningStrategy::default()),
             MiningStrategyEnum::Selfish => Box::new(SelfishMiningStrategy::default()),
+            MiningStrategyEnum::SelfishTimewarp => Box::new(SelfishTimewarpStrategy::default()),
             MiningStrategyEnum::Timewarp => Box::new(TimewarpStrategy::default()),
         }
     }

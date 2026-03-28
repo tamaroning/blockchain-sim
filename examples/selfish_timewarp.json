@@ -3,7 +3,7 @@
     {
       "hashrate": 487,
       "strategy": {
-        "type": "selfish"
+        "type": "selfish_timewarp"
       }
     },
     {

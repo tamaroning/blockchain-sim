@@ -38,9 +38,10 @@ impl SelfishMiningStrategy {
             blocks.push(current_id);
             let block = env.blockchain.get_block(current_id).unwrap();
             current_id = block.prev_block_id().unwrap();
-            blocks.push(block.id());
         }
 
+        // Oldest (parent) first so propagation respects parent-before-child order.
+        blocks.reverse();
         blocks
     }
 
@@ -50,11 +51,19 @@ impl SelfishMiningStrategy {
 
     fn get_first_unpublished_private_block(&self, env: &Env) -> BlockId {
         let mut current_id = self.private_chain;
+        let mut unpublished = Vec::new();
+
         for _ in 0..self.private_branch_len {
+            if !self.published_blocks.contains(&current_id) {
+                unpublished.push(current_id);
+            }
             let block = env.blockchain.get_block(current_id).unwrap();
             current_id = block.prev_block_id().unwrap();
         }
-        current_id
+
+        *unpublished
+            .last()
+            .expect("delta_prev > 2 implies at least one unpublished private block")
     }
 
     fn publish_block(&mut self, block: BlockId, env: &Env) -> Vec<Action> {

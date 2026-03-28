@@ -15,11 +15,12 @@ def parse_inputs(
 ) -> List[Tuple[str, Path]]:
     """
     raw_inputs expects items like "label=/abs/path.csv" or "label=relative/path.csv".
-    If none are provided, fall back to the default two datasets.
+    If none are provided, fall back to the default datasets (honest, selfish-timewarp, timewarp sweeps).
     """
     if not raw_inputs:
         return [
             ("honest-100%", base_dir / "results/honest.csv"),
+            ("selfish-timewarp-48.7%", base_dir / "results/selfish_timewarp.csv"),
             #("timewarp-50%", base_dir / "results/timewarp50.csv"),
             #("timewarp-60%", base_dir / "results/timewarp60.csv"),
             #("timewarp-70%", base_dir / "results/timewarp70.csv"),
@@ -301,7 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input",
         action="append",
         metavar="LABEL=PATH",
-        help="追加で描画するCSVを label=path 形式で指定（複数可）。未指定ならデフォルト2種を使用。",
+        help="追加で描画するCSVを label=path 形式で指定（複数可）。未指定ならデフォルトの複数系列を使用。",
     )
     parser.add_argument(
         "-o",
