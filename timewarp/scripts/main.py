@@ -20,11 +20,13 @@ def parse_inputs(
     if not raw_inputs:
         return [
             ("honest-100%", base_dir / "results/honest.csv"),
-            ("timewarp-50%", base_dir / "results/timewarp50.csv"),
-            ("timewarp-60%", base_dir / "results/timewarp60.csv"),
-            ("timewarp-70%", base_dir / "results/timewarp70.csv"),
-            ("timewarp-80%", base_dir / "results/timewarp80.csv"),
+            #("timewarp-50%", base_dir / "results/timewarp50.csv"),
+            #("timewarp-60%", base_dir / "results/timewarp60.csv"),
+            #("timewarp-70%", base_dir / "results/timewarp70.csv"),
+            #("timewarp-80%", base_dir / "results/timewarp80.csv"),
+            ("timewarp-85%", base_dir / "results/timewarp85.csv"),
             ("timewarp-90%", base_dir / "results/timewarp90.csv"),
+            #("timewarp-95%", base_dir / "results/timewarp95.csv"),
             ("timewarp-100%", base_dir / "results/timewarp100.csv"),
         ]
 
