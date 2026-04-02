@@ -189,11 +189,8 @@ impl BlockchainSimulator {
                         .protocol
                         .calculate_difficulty(mining_base_block, &self.env);
                     let minter_hashrate = self.nodes.get_node(minter).hashrate();
-                    let generation_time = self.protocol.calculate_generation_time(
-                        &mut self.rng,
-                        new_difficulty,
-                        minter_hashrate,
-                    );
+                    let generation_time =
+                        new_difficulty.calculate_mining_time(&mut self.rng, minter_hashrate);
                     let next_mining_time = base_time + generation_time;
 
                     // すでにキューにある同じノードのマイニングタスクを削除
@@ -230,11 +227,12 @@ impl BlockchainSimulator {
                     );
 
                     if new_difficulty != mining_base_block.difficulty() {
-                        let rate = new_difficulty as f64 / mining_base_block.difficulty() as f64;
+                        let rate =
+                            new_difficulty.as_f64() / mining_base_block.difficulty().as_f64();
                         log::debug!(
                             "DAA: {:e} -> {:e} (rate: {:.2}) @ round {}, block ID: {}",
-                            mining_base_block.difficulty(),
-                            new_difficulty,
+                            mining_base_block.difficulty().as_f64(),
+                            new_difficulty.as_f64(),
                             rate,
                             mining_base_block.height(),
                             new_block.id(),
@@ -321,7 +319,7 @@ impl BlockchainSimulator {
             "📦 time: {}, minter: {}, difficulty: {:.4}, height: {}",
             self.current_time,
             new_block.minter(),
-            new_block.difficulty(),
+            new_block.difficulty().as_f64(),
             new_block.height()
         );
 
@@ -363,7 +361,7 @@ impl BlockchainSimulator {
             log::info!(
                 "Block ID: {}, Difficulty: {:.4}, Height: {}, Minter: {}, Time: {}, Prev Block ID: {:?}, Rand: {}",
                 block.id(),
-                block.difficulty(),
+                block.difficulty().as_f64(),
                 block.height(),
                 block.minter(),
                 block.time(),
@@ -386,7 +384,7 @@ impl BlockchainSimulator {
             self.env
                 .blockchain
                 .last_block()
-                .map_or(0.0, |b| b.difficulty())
+                .map_or(0.0, |b| b.difficulty().as_f64())
         );
         log::info!(
             "- Avg. time/block: {}",

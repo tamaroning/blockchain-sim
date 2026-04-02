@@ -1,4 +1,4 @@
-use crate::{Protocol, blockchain::BlockId, node::NodeId};
+use crate::{Protocol, blockchain::BlockId, node::NodeId, protocol::Difficulty};
 
 pub const GENESIS_BLOCK_ID: BlockId = BlockId::new(0);
 
@@ -14,7 +14,7 @@ pub struct Block {
     rand: i64,
     id: BlockId,
     /// Difficulty
-    difficulty: f64,
+    difficulty: Difficulty,
     /// マイニングにかかった時間
     pub mining_time: i64,
 }
@@ -27,7 +27,7 @@ impl Block {
         time: i64,
         rand: i64,
         id: BlockId,
-        difficulty: f64,
+        difficulty: Difficulty,
         mining_time: i64,
     ) -> Self {
         Self {
@@ -63,7 +63,7 @@ impl Block {
         self.id
     }
 
-    pub fn difficulty(&self) -> f64 {
+    pub fn difficulty(&self) -> Difficulty {
         self.difficulty
     }
 

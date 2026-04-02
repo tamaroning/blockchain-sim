@@ -106,7 +106,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let record = blockchain_sim::types::Record {
                 round: block.height() as u32,
                 timestamp: block.time(),
-                difficulty: block.difficulty(),
+                difficulty: block.difficulty().as_f64(),
                 mining_time: block.mining_time,
                 minter: block.minter(),
             };
