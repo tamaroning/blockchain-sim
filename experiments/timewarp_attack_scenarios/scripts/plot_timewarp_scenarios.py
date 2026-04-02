@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import json
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
@@ -18,18 +19,27 @@ def parse_inputs(
     If none are provided, fall back to the default datasets (honest, selfish-timewarp, timewarp sweeps).
     """
     if not raw_inputs:
-        return [
-            ("honest-100%", base_dir / "results/honest.csv"),
-            ("selfish-timewarp-48.7%", base_dir / "results/selfish_timewarp.csv"),
-            #("timewarp-50%", base_dir / "results/timewarp50.csv"),
-            #("timewarp-60%", base_dir / "results/timewarp60.csv"),
-            #("timewarp-70%", base_dir / "results/timewarp70.csv"),
-            #("timewarp-80%", base_dir / "results/timewarp80.csv"),
-            ("timewarp-85%", base_dir / "results/timewarp85.csv"),
-            ("timewarp-90%", base_dir / "results/timewarp90.csv"),
-            #("timewarp-95%", base_dir / "results/timewarp95.csv"),
-            ("timewarp-100%", base_dir / "results/timewarp100.csv"),
+        results_dir = base_dir / "results"
+        profiles_dir = base_dir / "profiles"
+        default_files = [
+            "honest.csv",
+            "selfish_timewarp.csv",
+            # "timewarp50.csv",
+            # "timewarp60.csv",
+            # "timewarp70.csv",
+            # "timewarp80.csv",
+            "timewarp85.csv",
+            "timewarp90.csv",
+            # "timewarp95.csv",
+            "timewarp100.csv",
         ]
+        parsed_defaults: List[Tuple[str, Path]] = []
+        for filename in default_files:
+            csv_path = results_dir / filename
+            profile_path = profiles_dir / f"{Path(filename).stem}.json"
+            label = _label_from_profile(profile_path, fallback_label=Path(filename).stem)
+            parsed_defaults.append((label, csv_path))
+        return parsed_defaults
 
     parsed: List[Tuple[str, Path]] = []
     for item in raw_inputs:
@@ -40,6 +50,61 @@ def parse_inputs(
         path = path if path.is_absolute() else base_dir / path
         parsed.append((label, path))
     return parsed
+
+
+def _label_from_profile(profile_path: Path, fallback_label: str) -> str:
+    """
+    profile JSON から「攻撃戦略(type!=honest)のハッシュレート比率」を凡例ラベルとして組み立てる。
+    例:
+      - selfish_timewarp.json (49/51) -> selfish-timewarp-49%
+      - timewarp90.json (90/10)       -> timewarp-90%
+      - honest.json (all honest)      -> honest-100%
+    """
+    if not profile_path.exists():
+        return fallback_label.replace("_", "-")
+
+    try:
+        with profile_path.open("r", encoding="utf-8") as f:
+            profile = json.load(f)
+    except Exception:
+        return fallback_label.replace("_", "-")
+
+    nodes = profile.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        return fallback_label.replace("_", "-")
+
+    total_hashrate = 0.0
+    attacker_shares: dict[str, float] = {}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        hashrate = node.get("hashrate", 0)
+        if not isinstance(hashrate, (int, float)):
+            continue
+        total_hashrate += float(hashrate)
+        strategy = node.get("strategy", {})
+        if isinstance(strategy, dict):
+            strategy_type = strategy.get("type", "unknown")
+        else:
+            strategy_type = "unknown"
+        if strategy_type != "honest":
+            attacker_shares[str(strategy_type)] = (
+                attacker_shares.get(str(strategy_type), 0.0) + float(hashrate)
+            )
+
+    if total_hashrate <= 0:
+        return fallback_label.replace("_", "-")
+
+    if not attacker_shares:
+        return "honest-100%"
+
+    parts: list[str] = []
+    for strategy_type in sorted(attacker_shares.keys()):
+        pct = attacker_shares[strategy_type] / total_hashrate * 100.0
+        pct_str = f"{pct:.1f}".rstrip("0").rstrip(".")
+        parts.append(f"{strategy_type.replace('_', '-')}-{pct_str}%")
+
+    return "+".join(parts)
 
 
 def load_series(label: str, csv_path: Path) -> Tuple[pd.Series, pd.Series, pd.Series]:
