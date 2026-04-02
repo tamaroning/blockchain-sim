@@ -35,6 +35,6 @@ uv run python experiments/timewarp_attack_scenarios/scripts/run_timewarp_scenari
   - **説明**: simulator（`cargo run ...`）の実行をまとめる。複数シナリオを並列で一括実行し、必要なら difficulty グラフ生成まで行う。
   - **実行例**:
     ```sh
-    uv run python experiments/timewarp_attack_scenarios/scripts/run_timewarp_scenarios.py --end-round 100000
-    uv run python experiments/timewarp_attack_scenarios/scripts/run_timewarp_scenarios.py --end-round 100000 --no-with-plot
+    uv run python experiments/timewarp_attack_scenarios/scripts/run_timewarp_scenarios.py --end-round 200000
+    uv run python experiments/timewarp_attack_scenarios/scripts/run_timewarp_scenarios.py --end-round 200000 --no-with-plot
     ```
