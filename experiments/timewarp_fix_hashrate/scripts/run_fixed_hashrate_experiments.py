@@ -15,7 +15,12 @@ PROJECT_ROOT = next(
 )
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.utils import ensure_release_binary, write_profile_json
+from experiments.utils import (
+    ensure_release_binary,
+    find_project_root,
+    run_cargo_build_release,
+    write_profile_json,
+)
 
 
 def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
@@ -209,12 +214,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="縦軸を線形スケールにします（デフォルトは対数スケール）。",
     )
-    parser.add_argument(
-        "--build-release",
-        action="store_true",
-        help="バイナリ未生成時に `cargo build --release` を自動実行します。",
-    )
-
     return parser
 
 
@@ -238,7 +237,9 @@ def main() -> None:
     if args.binary is not None:
         binary_path = args.binary
     else:
-        binary_path = ensure_release_binary(script_path.parent, auto_build=args.build_release)
+        project_root = find_project_root(script_path.parent)
+        run_cargo_build_release(project_root)
+        binary_path = ensure_release_binary(script_path.parent)
 
     results_dir = base_dir / "results"
 

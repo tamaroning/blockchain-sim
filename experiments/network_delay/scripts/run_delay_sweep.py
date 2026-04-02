@@ -13,7 +13,7 @@ PROJECT_ROOT = next(
 )
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from experiments.utils import ensure_release_binary
+from experiments.utils import ensure_release_binary, find_project_root, run_cargo_build_release
 
 
 def run_cargo_command(delta_T, num_nodes, end_round, protocol, binary_path, output_dir: Path):
@@ -136,14 +136,10 @@ def main():
         action="store_true",
         help="順次実行モード（並列実行を無効化）",
     )
-    parser.add_argument(
-        "--build-release",
-        action="store_true",
-        help="バイナリ未生成時に `cargo build --release` を自動実行します。",
-    )
-
     args = parser.parse_args()
-    binary_path = ensure_release_binary(script_dir, auto_build=args.build_release)
+    project_root = find_project_root(script_dir)
+    run_cargo_build_release(project_root)
+    binary_path = ensure_release_binary(script_dir)
 
     # 最大ワーカー数を決定
     if args.serial or args.max_workers == 0:

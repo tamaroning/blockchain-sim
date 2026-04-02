@@ -11,8 +11,7 @@
 ## 使い方
 
 ```sh
-cd /Users/raikitamura/work/blockchain-sim
-cargo build --release
+cd <repo-root>
 
 # CSVを生成
 uv run python experiments/network_delay/scripts/run_delay_sweep.py --protocol=bitcoin
@@ -29,7 +28,7 @@ uv run python experiments/network_delay/scripts/plot_mining_time_series.py exper
 ## Pythonスクリプト
 
 - `scripts/run_delay_sweep.py`
-  - **説明**: `Δ/T` の複数条件で Rust シミュレータを実行し、CSV を `results/data/` に出力します。
+  - **説明**: `Δ/T` の複数条件で Rust シミュレータを実行し、CSV を `results/data/` に出力します（実行前に `cargo build --release` を自動実行）。
   - **実行例**:
     ```sh
     uv run python experiments/network_delay/scripts/run_delay_sweep.py --protocol bitcoin --delta-T-values 0.001,0.01,0.1

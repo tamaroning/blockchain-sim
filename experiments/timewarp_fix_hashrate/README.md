@@ -5,8 +5,7 @@
 ### 事前準備
 
 ```sh
-cd /Users/raikitamura/work/blockchain-sim
-cargo build --release
+cd <repo-root>
 uv sync  # まだであれば
 ```
 
@@ -14,7 +13,6 @@ uv sync  # まだであれば
 
 ```sh
 cd experiments/timewarp_fix_hashrate
-cargo build --release
 uv run scripts/run_fixed_hashrate_experiments.py \
   --runs 10 \
   --hashrate 90 \
@@ -40,7 +38,7 @@ uv run scripts/run_fixed_hashrate_experiments.py \
 ### Pythonスクリプト
 
 - `scripts/run_fixed_hashrate_experiments.py`
-  - **説明**: 指定ハッシュレートの `timewarp` プロファイルを生成し、同条件で複数回シミュレーションして結果を重ね描画します。
+  - **説明**: 指定ハッシュレートの `timewarp` プロファイルを生成し、同条件で複数回シミュレーションして結果を重ね描画します（実行前に `cargo build --release` を自動実行）。
   - **実行例**:
     ```sh
     uv run python experiments/timewarp_fix_hashrate/scripts/run_fixed_hashrate_experiments.py \
