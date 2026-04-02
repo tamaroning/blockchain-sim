@@ -15,6 +15,8 @@ pub struct Block {
     id: BlockId,
     /// Difficulty
     difficulty: Difficulty,
+    /// Cumulative chain weight from genesis to this block.
+    cumulative_chain_weight: f64,
     /// マイニングにかかった時間
     pub mining_time: i64,
 }
@@ -28,6 +30,7 @@ impl Block {
         rand: i64,
         id: BlockId,
         difficulty: Difficulty,
+        cumulative_chain_weight: f64,
         mining_time: i64,
     ) -> Self {
         Self {
@@ -38,11 +41,13 @@ impl Block {
             rand,
             id,
             difficulty,
+            cumulative_chain_weight,
             mining_time,
         }
     }
 
-    pub fn genesis(protocol: &dyn Protocol) -> Self {
+    pub fn genesis(protocol: &dyn Protocol, total_hashrate: i64) -> Self {
+        let difficulty = protocol.default_difficulty(total_hashrate);
         Self {
             height: 0,
             prev_block_id: None,
@@ -50,7 +55,8 @@ impl Block {
             time: 0,
             rand: 0,
             id: GENESIS_BLOCK_ID,
-            difficulty: protocol.default_difficulty(),
+            difficulty,
+            cumulative_chain_weight: difficulty.chain_weight(),
             mining_time: 0,
         }
     }
@@ -81,5 +87,9 @@ impl Block {
 
     pub fn rand(&self) -> i64 {
         self.rand
+    }
+
+    pub fn cumulative_chain_weight(&self) -> f64 {
+        self.cumulative_chain_weight
     }
 }

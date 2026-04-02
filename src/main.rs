@@ -1,4 +1,6 @@
-use blockchain_sim::{BlockchainSimulator, NetworkProfile, ProtocolType, node::NodeId};
+use blockchain_sim::{
+    BlockchainSimulator, GenesisDifficultyMode, NetworkProfile, ProtocolType, node::NodeId,
+};
 use clap::Parser;
 use rand::Rng;
 use std::{collections::HashMap, path::PathBuf};
@@ -23,6 +25,10 @@ struct Cli {
 
     #[clap(long, value_enum, default_value_t = ProtocolType::Bitcoin)]
     protocol: ProtocolType,
+
+    /// How to determine genesis difficulty: inferred from total hashrate or fixed preset.
+    #[clap(long, value_enum, default_value_t = GenesisDifficultyMode::Inferred)]
+    genesis_difficulty_mode: GenesisDifficultyMode,
 
     /// The path to the CSV file for outputting block timestamp and difficulty.
     #[clap(long, short)]
@@ -79,7 +85,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.seed.unwrap(),
             args.end_round,
             args.delay,
-            args.protocol.to_protocol(),
+            args.protocol.to_protocol(args.genesis_difficulty_mode),
         )
         .map_err(|e| format!("Failed to create simulator from profile: {}", e))?
     } else {
@@ -88,7 +94,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.seed.unwrap(),
             args.end_round,
             args.delay,
-            args.protocol.to_protocol(),
+            args.protocol.to_protocol(args.genesis_difficulty_mode),
         )
     };
 

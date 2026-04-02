@@ -28,12 +28,12 @@ pub struct Blockchain {
 }
 
 impl Blockchain {
-    pub fn new(protocol: &dyn Protocol) -> Self {
+    pub fn new(protocol: &dyn Protocol, total_hashrate: i64) -> Self {
         let mut blockchain = Self {
             blocks: Vec::new(),
             next_block_id: AtomicUsize::new(1),
         };
-        blockchain.add_block(Block::genesis(protocol));
+        blockchain.add_block(Block::genesis(protocol, total_hashrate));
         blockchain
     }
 
@@ -93,26 +93,29 @@ impl Blockchain {
         self.blocks.last()
     }
 
-    /// メインチェーンを取得する（最高heightのブロックからprev_block_idを辿る）
+    fn cumulative_chain_weight(&self, tip_id: BlockId) -> f64 {
+        self.get_block(tip_id)
+            .map(|block| block.cumulative_chain_weight())
+            .unwrap_or(0.0)
+    }
+
+    /// メインチェーンを取得する（最重チェーン先端からprev_block_idを辿る）
     /// Return: A list of block IDs. (oldest to newest)
     pub fn get_main_chain(&self) -> Vec<BlockId> {
-        let max_height = self.max_height();
-        if max_height == 0 {
+        if self.blocks.is_empty() {
             return vec![GENESIS_BLOCK_ID]; // ジェネシスブロックのみ
         }
 
-        // 最高heightを持つブロックを探す
-        let mut tip_block_id = None;
+        // 最重チェーン先端を探す。同値なら既存先端を維持して first-seen 相当とする。
+        let mut tip_id = GENESIS_BLOCK_ID;
+        let mut best_weight = self.cumulative_chain_weight(GENESIS_BLOCK_ID);
         for block in &self.blocks {
-            if block.height() == max_height {
-                tip_block_id = Some(block.id());
-                break;
+            let block_weight = self.cumulative_chain_weight(block.id());
+            if block_weight > best_weight {
+                best_weight = block_weight;
+                tip_id = block.id();
             }
         }
-
-        let Some(tip_id) = tip_block_id else {
-            return vec![GENESIS_BLOCK_ID];
-        };
 
         // prev_block_idを辿ってメインチェーンを構築
         let mut chain = Vec::new();

@@ -2,12 +2,22 @@ use crate::{block::Block, simulator::Env};
 use rand::rngs::StdRng;
 use rand_distr::{Distribution, Exp};
 
-use super::{Difficulty, Protocol};
+use super::{Difficulty, GenesisDifficultyMode, Protocol};
 
 /// Bitcoin Protocol
 /// expected generation time = expected required hash / hashrate
 /// expected required hash = D * 2^32
-pub(super) struct BitcoinProtocol;
+pub(super) struct BitcoinProtocol {
+    genesis_difficulty_mode: GenesisDifficultyMode,
+}
+
+impl BitcoinProtocol {
+    pub fn new(genesis_difficulty_mode: GenesisDifficultyMode) -> Self {
+        Self {
+            genesis_difficulty_mode,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BitcoinDifficulty {
@@ -39,6 +49,17 @@ impl BitcoinDifficulty {
         mantissa * 2f64.powi(8 * (exponent - 3))
     }
 
+    pub fn target(self) -> f64 {
+        // Bitcoin: difficulty = target_max / target
+        Self::target_max() / self.value
+    }
+
+    pub fn work(self) -> f64 {
+        // Chainwork per block: floor(2^256 / (target + 1)).
+        // floor is unnecessary for comparison because we only compare relative weights.
+        2f64.powi(256) / (self.target() + 1.0)
+    }
+
     pub fn calculate_mining_time(self, rng: &mut StdRng, hashrate: i64) -> i64 {
         let exp_dist: Exp<f64> = Exp::new(1.0).unwrap();
         let expected_hashes = self.value * 2f64.powi(32);
@@ -52,8 +73,18 @@ impl Protocol for BitcoinProtocol {
         "Bitcoin"
     }
 
-    fn default_difficulty(&self) -> Difficulty {
-        Difficulty::Bitcoin(BitcoinDifficulty::new(1.0))
+    fn default_difficulty(&self, total_hashrate: i64) -> Difficulty {
+        match self.genesis_difficulty_mode {
+            GenesisDifficultyMode::Inferred => {
+                // Expected time = difficulty * 2^32 / hashrate.
+                // Solve for difficulty so that the network target is 10 minutes per block.
+                const TARGET_BLOCK_TIME_MS: f64 = 10.0 * 60.0 * 1000.0;
+                let safe_hashrate = total_hashrate.max(1) as f64;
+                let difficulty = TARGET_BLOCK_TIME_MS * safe_hashrate / 2f64.powi(32);
+                Difficulty::Bitcoin(BitcoinDifficulty::new(difficulty))
+            }
+            GenesisDifficultyMode::Fixed => Difficulty::Bitcoin(BitcoinDifficulty::new(1.0)),
+        }
     }
 
     fn calculate_difficulty(&self, parent_block: &Block, env: &Env) -> Difficulty {

@@ -16,6 +16,6 @@ pub use mining_strategy::{
 };
 pub use node::Node;
 pub use profile::{NetworkProfile, NodeProfile};
-pub use protocol::{Protocol, ProtocolType};
+pub use protocol::{GenesisDifficultyMode, Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
 pub use types::Record;

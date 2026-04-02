@@ -17,6 +17,8 @@ pub struct Env {
     nodes: Vec<NodeId>,
     /// The delay time for block propagation.
     pub delay: i64,
+    /// The total hashrate of all nodes.
+    pub total_hashrate: i64,
     // Current environments
     /// A instance of the blockchain.
     pub blockchain: Blockchain,
@@ -24,10 +26,12 @@ pub struct Env {
 
 impl Env {
     pub fn new(nodes: &[Node], delay: i64, protocol: &dyn Protocol) -> Self {
+        let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
         Self {
             nodes: nodes.iter().map(|n| n.id()).collect(),
             delay,
-            blockchain: Blockchain::new(&*protocol),
+            total_hashrate,
+            blockchain: Blockchain::new(&*protocol, total_hashrate),
         }
     }
 
@@ -215,6 +219,8 @@ impl BlockchainSimulator {
                         new_block_height,
                         &self.env,
                     );
+                    let cumulative_chain_weight = mining_base_block.cumulative_chain_weight()
+                        + new_difficulty.chain_weight();
                     let new_block = Block::new(
                         new_block_height,
                         Some(prev_block_id),
@@ -223,6 +229,7 @@ impl BlockchainSimulator {
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         self.env.blockchain.next_block_id(),
                         new_difficulty,
+                        cumulative_chain_weight,
                         generation_time,
                     );
 

@@ -11,21 +11,24 @@ pub use selfish::SelfishMiningStrategy;
 pub use selfish_timewarp::SelfishTimewarpStrategy;
 pub use timewarp::TimewarpStrategy;
 
+fn cumulative_chain_weight(env: &Env, tip_id: BlockId) -> f64 {
+    env.blockchain
+        .get_block(tip_id)
+        .map(|block| block.cumulative_chain_weight())
+        .unwrap_or(0.0)
+}
+
 pub(crate) fn longest_chain(env: &Env, block1_id: BlockId, block2_id: BlockId) -> BlockId {
-    let block1 = env.blockchain.get_block(block1_id).unwrap();
-    let block2 = env.blockchain.get_block(block2_id).unwrap();
-    let height1 = block1.height();
-    let height2 = block2.height();
-    if height1 >= height2 {
+    let weight1 = cumulative_chain_weight(env, block1_id);
+    let weight2 = cumulative_chain_weight(env, block2_id);
+    if weight1 > weight2 {
         block1_id
-    } else if height1 < height2 {
+    } else if weight2 > weight1 {
         block2_id
     } else {
-        if block1.rand() > block2.rand() {
-            block1_id
-        } else {
-            block2_id
-        }
+        // Tie-break: keep current head.
+        // `longest_chain(current_head, incoming_head)` call sites preserve first-seen behavior.
+        block1_id
     }
 }
 

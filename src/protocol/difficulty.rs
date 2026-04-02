@@ -24,4 +24,14 @@ impl Difficulty {
             Difficulty::Ethereum(d) => d.as_f64(),
         }
     }
+
+    /// Weight used for fork-choice:
+    /// - Bitcoin: chainwork increment derived from target
+    /// - Ethereum(eth1): total difficulty increment
+    pub fn chain_weight(self) -> f64 {
+        match self {
+            Difficulty::Bitcoin(d) => d.work(),
+            Difficulty::Ethereum(d) => d.work(),
+        }
+    }
 }
