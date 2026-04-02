@@ -1,0 +1,2 @@
+# Do not track generated CSV outputs under experiments
+**/*.csv
