@@ -1,17 +1,16 @@
 {
-    "nodes": [
-      {
-        "hashrate": 50,
-        "strategy": {
-          "type": "honest"
-        }
-      },
-      {
-        "hashrate": 50,
-        "strategy": {
-          "type": "honest"
-        }
+  "nodes": [
+    {
+      "hashrate": 50,
+      "strategy": {
+        "type": "honest"
       }
-    ]
-  }
-  
+    },
+    {
+      "hashrate": 50,
+      "strategy": {
+        "type": "honest"
+      }
+    }
+  ]
+}

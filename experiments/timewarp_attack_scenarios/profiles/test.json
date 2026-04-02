@@ -1,11 +1,10 @@
 {
-    "nodes": [
-      {
-        "hashrate": 50,
-        "strategy": {
-          "type": "timewarp"
-        }
+  "nodes": [
+    {
+      "hashrate": 50,
+      "strategy": {
+        "type": "timewarp"
       }
-    ]
-  }
-  
+    }
+  ]
+}

@@ -27,36 +27,3 @@ RUST_LOG="info" cargo run --release -- --profile examples/selfish.json --end-rou
 # Timewarp
 RUST_LOG="info" cargo run --release -- --end-round 10000 --protocol bitcoin --profile examples/timewarp.json
 ```
-
-## Experiments
-
-Plot: difficulty and block generation time over time.
-
-![Plot](experiments/network_delay/results/plots/plot-mining-bitcoin-0.1.png "Plot")
-
-
-```bash
-cd blockchain-sim
-
-# Run simulations
-cargo build --release
-uv run python experiments/network_delay/scripts/run_delay_sweep.py --protocol=ethereum
-uv run python experiments/network_delay/scripts/run_delay_sweep.py --protocol=bitcoin
-
-# Plot difficulty over time
-uv run python experiments/network_delay/scripts/plot_difficulty_curves.py --protocol=ethereum
-uv run python experiments/network_delay/scripts/plot_difficulty_curves.py --protocol=bitcoin
-
-# Plot block generation time and difficulty over time
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/bitcoin-0.001.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/bitcoin-0.01.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/bitcoin-0.1.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/bitcoin-0.5.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/ethereum-0.001.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/ethereum-0.01.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/ethereum-0.1.csv
-uv run python experiments/network_delay/scripts/plot_mining_time_series.py experiments/network_delay/results/data/ethereum-0.5.csv
-```
-
-その他の実験補助スクリプトは `experiments/README.md` に整理しています。
-
