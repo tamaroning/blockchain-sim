@@ -10,6 +10,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+DEFAULT_NETWORK_DELAY_MS = 600
+DEFAULT_SCENARIO_FILES = [
+    "honest.csv",
+    "selfish_timewarp.csv",
+    "timewarp85.csv",
+    "timewarp90.csv",
+    "timewarp100.csv",
+]
+
 
 def parse_inputs(
     raw_inputs: Iterable[str] | None, base_dir: Path
@@ -21,20 +30,9 @@ def parse_inputs(
     if not raw_inputs:
         results_dir = base_dir / "results"
         profiles_dir = base_dir / "profiles"
-        default_files = [
-            "honest.csv",
-            "selfish_timewarp.csv",
-            # "timewarp50.csv",
-            # "timewarp60.csv",
-            # "timewarp70.csv",
-            # "timewarp80.csv",
-            "timewarp85.csv",
-            "timewarp90.csv",
-            # "timewarp95.csv",
-            "timewarp100.csv",
-        ]
         parsed_defaults: List[Tuple[str, Path]] = []
-        for filename in default_files:
+        # run_timewarp_scenarios.py の run_full() で生成する系列と順序を揃える。
+        for filename in DEFAULT_SCENARIO_FILES:
             csv_path = results_dir / filename
             profile_path = profiles_dir / f"{Path(filename).stem}.json"
             label = _label_from_profile(profile_path, fallback_label=Path(filename).stem)
@@ -125,6 +123,33 @@ def load_series(label: str, csv_path: Path) -> Tuple[pd.Series, pd.Series, pd.Se
         df["mining_time"].rolling(window=1000, min_periods=1).mean() / 60000.0
     )
     return df["round"], df["difficulty"], mining_time_avg_min
+
+
+def _load_total_hashrate(profile_path: Path) -> float | None:
+    if not profile_path.exists():
+        return None
+    try:
+        with profile_path.open("r", encoding="utf-8") as f:
+            profile = json.load(f)
+    except Exception:
+        return None
+    nodes = profile.get("nodes")
+    if not isinstance(nodes, list):
+        return None
+    total = 0.0
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        hashrate = node.get("hashrate")
+        if isinstance(hashrate, (int, float)):
+            total += float(hashrate)
+    return total if total > 0 else None
+
+
+def _target_difficulty_for_delay(delay_ms: int, total_hashrate: float) -> float:
+    # Bitcoin model: E[mining_time] = difficulty * 2^32 / hashrate
+    # E[mining_time] = delay_ms を満たす difficulty。
+    return delay_ms * total_hashrate / (2**32)
 
 
 def _fit_trendline(
@@ -238,6 +263,8 @@ def _find_descending_step_segments(
 
 def plot_difficulty(
     datasets: Iterable[Tuple[str, Path]],
+    profiles_dir: Path,
+    delay_ms: int,
     output_path: Path | None,
     show: bool,
     log_y: bool,
@@ -250,6 +277,7 @@ def plot_difficulty(
     min_descending_steps: int,
     epoch_len: int,
 ) -> None:
+    datasets = list(datasets)
     fig, ax = plt.subplots(figsize=(10, 6))
     ax2 = ax.twinx() if show_mining_time else None
 
@@ -258,11 +286,29 @@ def plot_difficulty(
         .by_key()
         .get("color", ["C0"])
     )
+    # 先頭系列に依存せず、読める profile が1つでもあれば基準線を描く。
+    threshold_drawn = False
+    for _label, csv_path in datasets:
+        profile_path = profiles_dir / f"{csv_path.stem}.json"
+        total_hashrate = _load_total_hashrate(profile_path)
+        if total_hashrate is not None:
+            target_difficulty = _target_difficulty_for_delay(delay_ms, total_hashrate)
+            ax.axhline(
+                target_difficulty,
+                linestyle="--",
+                linewidth=1.8,
+                color="black",
+                alpha=0.8,
+                label=f"E[T]=delay ({delay_ms} ms), D={target_difficulty:.3g}",
+            )
+            threshold_drawn = True
+            break
 
     for label, csv_path in datasets:
         x, difficulty, mining_time = load_series(label, csv_path)
         color = next(colors)
         ax.plot(x, difficulty, label=label, color=color)
+
         if show_regression:
             use_log = regression_log_y if regression_log_y is not None else log_y
             if regression_mode == "global":
@@ -343,6 +389,8 @@ def plot_difficulty(
                 linestyle="--",
                 alpha=0.35,
             )
+    if not threshold_drawn:
+        print("[warn] 基準線用の profile を読めなかったため、E[T]=delay 線は描画されませんでした。")
 
     ax.set_xlabel("Block height")
     ax.set_ylabel("Difficulty")
@@ -389,6 +437,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--show",
         action="store_true",
         help="プロットを画面表示する場合に指定します。",
+    )
+    parser.add_argument(
+        "--delay",
+        type=int,
+        default=DEFAULT_NETWORK_DELAY_MS,
+        help="ネットワーク遅延 [ms]。E[T]=delay となる難易度の基準線描画に使用（デフォルト: 600）。",
     )
     parser.add_argument(
         "--log-y",
@@ -466,6 +520,8 @@ def main() -> None:
 
     plot_difficulty(
         datasets,
+        profiles_dir=base_dir / "profiles",
+        delay_ms=args.delay,
         output_path=output_path,
         show=args.show,
         log_y=args.log_y,

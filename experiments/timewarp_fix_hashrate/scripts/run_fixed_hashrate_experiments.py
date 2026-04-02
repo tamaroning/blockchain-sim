@@ -23,6 +23,7 @@ from experiments.utils import (
 )
 
 TOTAL_HASHRATE = 1_000_000_000_000
+DEFAULT_NETWORK_DELAY_MS = 600
 
 
 def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
@@ -119,6 +120,7 @@ def load_difficulty_series(csv_path: Path) -> tuple[pd.Series, pd.Series]:
 def plot_runs(
     csv_paths: List[Path],
     attacker_hashrate: int,
+    delay_ms: int,
     output_path: Path | None,
     show: bool,
     log_y: bool,
@@ -133,6 +135,19 @@ def plot_runs(
             label=f"run {i}",
             alpha=0.4,
         )
+
+    # E[mining_time] = delay を満たす基準難易度 (Bitcoin model):
+    # E[mining_time] = difficulty * 2^32 / hashrate
+    # => difficulty = delay_ms * hashrate / 2^32
+    target_difficulty = delay_ms * TOTAL_HASHRATE / (2**32)
+    ax.axhline(
+        target_difficulty,
+        linestyle="--",
+        linewidth=1.8,
+        color="black",
+        alpha=0.8,
+        label=f"E[T]=delay ({delay_ms} ms), D={target_difficulty:.3g}",
+    )
 
     ax.set_xlabel("Block height")
     ax.set_ylabel("Difficulty")
@@ -274,10 +289,12 @@ def main() -> None:
     output_path = args.output or default_output
 
     log_y = not args.linear_y
+    effective_delay_ms = args.delay if args.delay is not None else DEFAULT_NETWORK_DELAY_MS
 
     plot_runs(
         csv_paths=csv_paths,
         attacker_hashrate=attacker_hashrate,
+        delay_ms=effective_delay_ms,
         output_path=output_path,
         show=args.show,
         log_y=log_y,
