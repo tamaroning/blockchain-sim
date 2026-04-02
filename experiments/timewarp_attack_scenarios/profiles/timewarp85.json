@@ -1,13 +1,13 @@
 {
   "nodes": [
     {
-      "hashrate": 85,
+      "hashrate": 850000000000,
       "strategy": {
         "type": "timewarp"
       }
     },
     {
-      "hashrate": 15,
+      "hashrate": 150000000000,
       "strategy": {
         "type": "honest"
       }

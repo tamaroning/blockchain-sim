@@ -13,6 +13,7 @@ from experiments.utils import write_profile_json
 
 SCENARIO_DIR = SCRIPT_PATH.parents[1]
 PROFILES_DIR = SCENARIO_DIR / "profiles"
+TOTAL_HASHRATE = 1_000_000_000_000
 
 # ファイル名（timewarp*.json の *）→ 攻撃側 timewarp のハッシュレート。
 # timewarp50 は歴史的に 60/40 の内容のまま（ファイル名と数値が一致しない）。
@@ -28,17 +29,23 @@ _TIMWARP_ATTACKER_BY_STEM: dict[int, int] = {
 }
 
 
+def _percent_hashrate(percent: int) -> int:
+    return (TOTAL_HASHRATE * percent) // 100
+
+
 def _timewarp_profile(attacker_hashrate: int) -> dict:
     if attacker_hashrate == 100:
         return {
             "nodes": [
-                {"hashrate": 100, "strategy": {"type": "timewarp"}},
+                {"hashrate": TOTAL_HASHRATE, "strategy": {"type": "timewarp"}},
             ]
         }
+    attacker = _percent_hashrate(attacker_hashrate)
+    honest = TOTAL_HASHRATE - attacker
     return {
         "nodes": [
-            {"hashrate": attacker_hashrate, "strategy": {"type": "timewarp"}},
-            {"hashrate": 100 - attacker_hashrate, "strategy": {"type": "honest"}},
+            {"hashrate": attacker, "strategy": {"type": "timewarp"}},
+            {"hashrate": honest, "strategy": {"type": "honest"}},
         ]
     }
 
@@ -50,8 +57,8 @@ def generate_all() -> list[Path]:
         write_profile_json(
             {
                 "nodes": [
-                    {"hashrate": 50, "strategy": {"type": "honest"}},
-                    {"hashrate": 50, "strategy": {"type": "honest"}},
+                    {"hashrate": _percent_hashrate(50), "strategy": {"type": "honest"}},
+                    {"hashrate": TOTAL_HASHRATE - _percent_hashrate(50), "strategy": {"type": "honest"}},
                 ]
             },
             PROFILES_DIR / "honest.json",
@@ -60,7 +67,7 @@ def generate_all() -> list[Path]:
 
     written.append(
         write_profile_json(
-            {"nodes": [{"hashrate": 50, "strategy": {"type": "timewarp"}}]},
+            {"nodes": [{"hashrate": TOTAL_HASHRATE, "strategy": {"type": "timewarp"}}]},
             PROFILES_DIR / "test.json",
         )
     )
@@ -69,8 +76,8 @@ def generate_all() -> list[Path]:
         write_profile_json(
             {
                 "nodes": [
-                    {"hashrate": 49, "strategy": {"type": "selfish_timewarp"}},
-                    {"hashrate": 51, "strategy": {"type": "honest"}},
+                    {"hashrate": _percent_hashrate(49), "strategy": {"type": "selfish_timewarp"}},
+                    {"hashrate": TOTAL_HASHRATE - _percent_hashrate(49), "strategy": {"type": "honest"}},
                 ]
             },
             PROFILES_DIR / "selfish_timewarp.json",
