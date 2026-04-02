@@ -2,16 +2,18 @@
 import argparse
 import subprocess
 import os
+import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from pathlib import Path
 
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = next(
+    candidate for candidate in [SCRIPT_PATH.parent, *SCRIPT_PATH.parents] if (candidate / "Cargo.toml").exists()
+)
+sys.path.insert(0, str(PROJECT_ROOT))
 
-def find_project_root(start: Path) -> Path:
-    for candidate in [start, *start.parents]:
-        if (candidate / "Cargo.toml").exists():
-            return candidate
-    raise FileNotFoundError("Cargo.toml が見つからないため、リポジトリルートを特定できません。")
+from experiments.utils import ensure_release_binary
 
 
 def run_cargo_command(delta_T, num_nodes, end_round, protocol, binary_path, output_dir: Path):
@@ -37,7 +39,7 @@ def run_cargo_command(delta_T, num_nodes, end_round, protocol, binary_path, outp
     delta = int(delta_T * generation_time)
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / f"{protocol}-{delta_T}.csv"
+    output_file = output_dir / f"{protocol}_delay_ratio_{delta_T:g}.csv"
     cmd = [
         str(binary_path),
         f"--num-nodes={num_nodes}",
@@ -87,13 +89,6 @@ def main():
     script_dir = Path(__file__).resolve().parent
     experiment_dir = script_dir.parent
     output_dir = experiment_dir / "results" / "data"
-    project_root = find_project_root(script_dir)
-    binary_path = project_root / "target" / "release" / "blockchain-sim"
-    if not binary_path.exists():
-        raise FileNotFoundError(
-            f"blockchain-sim バイナリが見つかりません: {binary_path}\n"
-            "先に `cargo build --release` を実行してください。"
-        )
 
     parser = argparse.ArgumentParser(
         description="ブロックチェーンシミュレーションのCargoコマンドを並列実行します",
@@ -141,8 +136,14 @@ def main():
         action="store_true",
         help="順次実行モード（並列実行を無効化）",
     )
+    parser.add_argument(
+        "--build-release",
+        action="store_true",
+        help="バイナリ未生成時に `cargo build --release` を自動実行します。",
+    )
 
     args = parser.parse_args()
+    binary_path = ensure_release_binary(script_dir, auto_build=args.build_release)
 
     # 最大ワーカー数を決定
     if args.serial or args.max_workers == 0:

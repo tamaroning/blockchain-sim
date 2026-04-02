@@ -1,20 +1,21 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import List
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
+SCRIPT_PATH = Path(__file__).resolve()
+PROJECT_ROOT = next(
+    candidate for candidate in [SCRIPT_PATH.parent, *SCRIPT_PATH.parents] if (candidate / "Cargo.toml").exists()
+)
+sys.path.insert(0, str(PROJECT_ROOT))
 
-def find_project_root(start: Path) -> Path:
-    for candidate in [start, *start.parents]:
-        if (candidate / "Cargo.toml").exists():
-            return candidate
-    raise FileNotFoundError("Cargo.toml が見つからないため、リポジトリルートを特定できません。")
+from experiments.utils import ensure_release_binary, write_profile_json
 
 
 def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
@@ -45,10 +46,7 @@ def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
         ]
     }
 
-    with profile_path.open("w", encoding="utf-8") as f:
-        json.dump(profile, f, indent=2, ensure_ascii=False)
-
-    return profile_path
+    return write_profile_json(profile, profile_path)
 
 
 def run_one_simulation(
@@ -65,7 +63,7 @@ def run_one_simulation(
     1 回分のシミュレーションを実行し、結果 CSV のパスを返す。
     """
     results_dir.mkdir(parents=True, exist_ok=True)
-    output_csv = results_dir / f"timewarp{attacker_hashrate}_run{run_index:03d}.csv"
+    output_csv = results_dir / f"timewarp_hashrate_{attacker_hashrate:03d}_run_{run_index:03d}.csv"
 
     cmd = [
         str(binary_path),
@@ -194,7 +192,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="プロット画像の保存先パス（省略時は experiments/timewarp_fix_hashrate/results/difficulty_timewarp{HASH}_runs.png）",
+        help="プロット画像の保存先パス（省略時は experiments/timewarp_fix_hashrate/results/difficulty_timewarp_hashrate_{HASH}_runs.png）",
     )
     parser.add_argument(
         "--show",
@@ -211,6 +209,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="縦軸を線形スケールにします（デフォルトは対数スケール）。",
     )
+    parser.add_argument(
+        "--build-release",
+        action="store_true",
+        help="バイナリ未生成時に `cargo build --release` を自動実行します。",
+    )
 
     return parser
 
@@ -218,7 +221,6 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     script_path = Path(__file__).resolve()
     base_dir = script_path.parents[1]  # timewarp_fix_hashrate/
-    project_root = find_project_root(script_path.parent)  # リポジトリルート
 
     parser = build_parser()
     args = parser.parse_args()
@@ -236,13 +238,7 @@ def main() -> None:
     if args.binary is not None:
         binary_path = args.binary
     else:
-        binary_path = project_root / "target/release/blockchain-sim"
-
-    if not binary_path.exists():
-        raise FileNotFoundError(
-            f"blockchain-sim バイナリが見つかりません: {binary_path}\n"
-            "先に `cargo build --release` を実行してください。"
-        )
+        binary_path = ensure_release_binary(script_path.parent, auto_build=args.build_release)
 
     results_dir = base_dir / "results"
 
@@ -269,7 +265,7 @@ def main() -> None:
     default_output = (
         base_dir
         / "results"
-        / f"difficulty_timewarp{attacker_hashrate}_runs.png"
+        / f"difficulty_timewarp_hashrate_{attacker_hashrate:03d}_runs.png"
     )
     output_path = args.output or default_output
 

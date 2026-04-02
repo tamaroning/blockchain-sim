@@ -309,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="保存先ファイルパス（省略時は experiments/timewarp_attack_scenarios/results/difficulty.png に保存）。",
+        help="保存先ファイルパス（省略時は experiments/timewarp_attack_scenarios/results/difficulty_timewarp_scenarios.png に保存）。",
     )
     parser.add_argument(
         "--show",
@@ -387,7 +387,7 @@ def main() -> None:
 
     datasets = parse_inputs(args.input, base_dir)
 
-    default_output = base_dir / "results/difficulty.png"
+    default_output = base_dir / "results/difficulty_timewarp_scenarios.png"
     output_path = args.output or default_output
 
     plot_difficulty(

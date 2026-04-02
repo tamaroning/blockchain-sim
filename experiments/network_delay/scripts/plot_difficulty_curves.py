@@ -12,7 +12,7 @@ DATA_DIR = BASE_DIR / "results" / "data"
 PLOTS_DIR = BASE_DIR / "results" / "plots"
 
 
-def plot_csv_files(csv_pattern="*.csv", output_file="plot.png"):
+def plot_csv_files(csv_pattern="*.csv", output_file="difficulty_curves.png"):
     """
     指定されたパターンのCSVファイルをプロットする
 
@@ -99,7 +99,7 @@ def plot_csv_files(csv_pattern="*.csv", output_file="plot.png"):
     plt.show()
 
 
-def plot_specific_deltas(delta_values=None, output_file="plot.png", protocol=""):
+def plot_specific_deltas(delta_values=None, output_file="difficulty_curves.png", protocol=""):
     """
     特定のdelta値のCSVファイルのみをプロットする
 
@@ -199,8 +199,8 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="plot.png",
-        help="出力ファイル名 (デフォルト: plot-<protocol>.png)",
+        default="difficulty_curves.png",
+        help="出力ファイル名 (デフォルト: difficulty_curves_<protocol>.png)",
     )
     parser.add_argument(
         "--deltas",
@@ -219,8 +219,8 @@ def main():
         return
 
     # 出力ファイル名にプロトコル名を含める
-    if args.output == "plot.png":
-        output_file = PLOTS_DIR / f"plot-{args.protocol}.png"
+    if args.output == "difficulty_curves.png":
+        output_file = PLOTS_DIR / f"difficulty_curves_{args.protocol}.png"
     else:
         output_file = Path(args.output)
         if not output_file.is_absolute():

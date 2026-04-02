@@ -32,7 +32,7 @@ def main():
         "--output",
         "-o",
         action="store",
-        default="plot.png",
+        default="mining_time_difficulty.png",
         help="Output file path for the plot",
     )
 
@@ -115,8 +115,8 @@ def main():
     # Save the plot
     csv_path = Path(args.csv_file)
     output_file = args.output
-    if output_file == "plot.png":
-        output_file = PLOTS_DIR / f"plot-mining-{csv_path.stem}.png"
+    if output_file == "mining_time_difficulty.png":
+        output_file = PLOTS_DIR / f"mining_time_difficulty_{csv_path.stem}.png"
     else:
         output_file = Path(output_file)
         if not output_file.is_absolute():

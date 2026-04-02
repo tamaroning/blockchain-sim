@@ -31,9 +31,9 @@ uv run scripts/run_fixed_hashrate_experiments.py \
 実行すると:
 
 - `experiments/timewarp_fix_hashrate/profiles/timewarp{HASH}.json` が自動生成されます（例: `timewarp90.json`）
-- 各試行の結果が `experiments/timewarp_fix_hashrate/results/timewarp{HASH}_runXXX.csv` として保存されます
+- 各試行の結果が `experiments/timewarp_fix_hashrate/results/timewarp_hashrate_{HASH}_run_XXX.csv` として保存されます
 - 全試行の difficulty 曲線をまとめて描いたグラフが
-  `experiments/timewarp_fix_hashrate/results/difficulty_timewarp{HASH}_runs.png` に保存されます
+  `experiments/timewarp_fix_hashrate/results/difficulty_timewarp_hashrate_{HASH}_runs.png` に保存されます
 
 ハッシュレートを変えたい場合は `--hashrate` の値だけ変えて再実行すれば OK です。
 

@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent.parent / "results" / "block_time.png",
+        default=Path(__file__).resolve().parent.parent / "results" / "block_timestamps_minutes.png",
         help="出力するPNGファイルパス",
     )
     parser.add_argument(
