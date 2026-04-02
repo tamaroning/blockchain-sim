@@ -12,8 +12,7 @@ uv sync  # まだであれば
 ### 使い方
 
 ```sh
-cd experiments/timewarp_fix_hashrate
-uv run scripts/run_fixed_hashrate_experiments.py \
+uv run experiments/timewarp_fix_hashrate/scripts/run_fixed_hashrate_experiments.py \
   --runs 10 \
   --hashrate 90 \
   --end-round 80000 \

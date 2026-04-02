@@ -185,6 +185,8 @@ def _find_descending_step_segments(
     """
     difficulty が「増えない(diff<=0)」状態が連続する区間のうち、
     「下がる段差(diff<0)」が min_steps 回以上含まれる区間を返す。
+    ただし、区間末尾で最小値に張り付く横ばい（例: difficulty=1 の張り付き）は
+    回帰対象から除外する。
 
     戻り値: (start_idx, end_idx, step_count)
       - start_idx/end_idx は difficulty のインデックス位置（0-based, 両端含む）
@@ -220,7 +222,14 @@ def _find_descending_step_segments(
             # diffs[k] corresponds to transition y[k] -> y[k+1]
             start_idx = run_start
             end_idx = run_end + 1
-            segments.append((start_idx, end_idx, step_count))
+            # 回帰は「下降している区間のみ」を対象にしたいので、
+            # 区間末尾で最小値に張り付く横ばい（difficulty=1 付近）を落とす。
+            # 浮動小数誤差を考慮して isclose を使う。
+            floor = y[end_idx]
+            while end_idx > start_idx and np.isclose(y[end_idx], floor, rtol=0.0, atol=1e-12):
+                end_idx -= 1
+            if end_idx > start_idx:
+                segments.append((start_idx, end_idx, step_count))
 
         i = j
 

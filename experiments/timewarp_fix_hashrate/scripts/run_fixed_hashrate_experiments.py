@@ -22,6 +22,8 @@ from experiments.utils import (
     write_profile_json,
 )
 
+TOTAL_HASHRATE = 1_000_000_000_000
+
 
 def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
     """
@@ -31,7 +33,8 @@ def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
     if not (0 <= attacker_hashrate <= 100):
         raise ValueError("--hashrate は 0〜100 の整数で指定してください")
 
-    defender_hashrate = 100 - attacker_hashrate
+    attacker_hashrate_value = (TOTAL_HASHRATE * attacker_hashrate) // 100
+    defender_hashrate_value = TOTAL_HASHRATE - attacker_hashrate_value
 
     profile_dir = base_dir / "profiles"
     profile_dir.mkdir(parents=True, exist_ok=True)
@@ -41,11 +44,11 @@ def ensure_profile(attacker_hashrate: int, base_dir: Path) -> Path:
     profile = {
         "nodes": [
             {
-                "hashrate": attacker_hashrate,
+                "hashrate": attacker_hashrate_value,
                 "strategy": {"type": "timewarp"},
             },
             {
-                "hashrate": defender_hashrate,
+                "hashrate": defender_hashrate_value,
                 "strategy": {"type": "honest"},
             },
         ]
