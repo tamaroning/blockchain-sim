@@ -1,7 +1,7 @@
 """
 横軸: ブロック生成時間 t_gen（秒）
 縦軸: DP による攻撃成功率
-色: 名目ハッシュレート割合 α
+塗りつぶし・等高線: 名目ハッシュレート割合 α
 
 伝播遅延 t_prop は固定（T_PROP）。
 
@@ -17,7 +17,6 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import BoundaryNorm
 
 # ==========================================
 # 1. 動的計画法 (DP) による攻撃成功率の計算
@@ -96,7 +95,7 @@ def _alpha_from_success_column(success_vs_alpha, alpha_grid, success_targets):
 
 
 # ==========================================
-# 2. ヒートマップ（横軸 = ブロック生成時間、縦 = 成功率、色 = α）
+# 2. 等高線図（横軸 = ブロック生成時間、縦 = 成功率、色・線 = α）
 # ==========================================
 def plot_nominal_hashrate_heatmap_by_block_generation_time():
     T_PROP = 2.0
@@ -136,32 +135,43 @@ def plot_nominal_hashrate_heatmap_by_block_generation_time():
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
-    # α を細かい離散段に分割（BoundaryNorm の境界数 = 段数 + 1）
-    n_alpha_color_levels = 50
-    boundaries = np.concatenate(
-        [np.linspace(0.0, 1.0, n_alpha_color_levels + 1), [1.001]]
-    )
     cmap = plt.colormaps["viridis"].copy()
     cmap.set_bad(color="#cccccc")
-    norm = BoundaryNorm(boundaries, ncolors=cmap.N, clip=True)
+    fill_levels = np.linspace(0.0, 1.0, 41)
+    line_levels = np.arange(0.0, 1.01, 0.1)
 
-    pcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=cmap, norm=norm)
+    csf = ax.contourf(
+        X,
+        Y,
+        Z,
+        levels=fill_levels,
+        cmap=cmap,
+        extend="both",
+        corner_mask=False,
+    )
+    cs = ax.contour(
+        X,
+        Y,
+        Z,
+        levels=line_levels,
+        colors="0.15",
+        linewidths=0.6,
+        linestyles="solid",
+        corner_mask=False,
+    )
+    ax.clabel(cs, inline=True, fontsize=8, fmt=r"$\alpha=%.1f$")
+
     cbar = fig.colorbar(
-        pcm,
+        csf,
         ax=ax,
         label="Nominal hashrate fraction α",
         ticks=np.linspace(0.0, 1.0, 11),
     )
     cbar.ax.minorticks_off()
 
-    cs_fine = ax.contour(X, Y, Z, levels=[0.25, 0.5, 0.75], colors="w", linewidths=0.35, alpha=0.5)
-    ax.clabel(cs_fine, inline=True, fontsize=8, fmt="%.2f")
-    cs50 = ax.contour(X, Y, Z, levels=[0.5], colors=["#f0f0f0"], linewidths=2.0, linestyles="-")
-    ax.clabel(cs50, inline=True, fontsize=10, fmt=lambda _lev: "α=0.5")
-
     ax.set_title(
         "Attack success probability vs block generation time (timewarp)\n"
-        f"Fixed propagation delay $t_{{\\mathrm{{prop}}}} = {T_PROP}$ s — color: nominal α"
+        f"Fixed propagation delay $t_{{\\mathrm{{prop}}}} = {T_PROP}$ s — contours: nominal α"
     )
     ax.set_xlabel("Block generation time $t_{\\mathrm{gen}}$ (s)")
     ax.set_ylabel("Attack success probability (DP)")
