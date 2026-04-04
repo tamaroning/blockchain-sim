@@ -210,14 +210,14 @@ def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
     )
 
     if show_pow_threshold:
-        # Dembo et al.: λΔ = (1−2β)/(β(1−β)), 1/(λΔ) = t_gen/t_prop。β は攻撃者割合で縦軸の名目 α と同一（オフセットなし）。
+        # Dembo et al.: β = (1−β)/(1+(1−β)·λΔ), λΔ = t_prop/t_gen と同一視。
+        # 変形すると t_prop/t_gen = (1−2β)/(β(1−β)), 縦軸は式の右辺（曲線上で β と一致）。
         betas_thr = np.linspace(0.001, 1.0, 1000)
-        lambda_delta = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
-        inv_lambda_delta = 1.0 / lambda_delta
-        t_gen_thr = T_PROP * inv_lambda_delta
+        ratio_prop_gen = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
+        t_gen_thr = T_PROP / ratio_prop_gen
         x_thr = t_gen_thr / T_PROP
         thr_mask = np.isfinite(t_gen_thr) & (t_gen_thr >= t_gen_min) & (t_gen_thr <= t_gen_max)
-        y_thr = betas_thr
+        y_thr = (1.0 - betas_thr) / (1.0 + (1.0 - betas_thr) * ratio_prop_gen)
         (line_thr,) = ax.plot(
             x_thr[thr_mask],
             y_thr[thr_mask],
