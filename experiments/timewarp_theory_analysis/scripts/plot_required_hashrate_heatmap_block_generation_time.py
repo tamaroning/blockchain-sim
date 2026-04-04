@@ -91,7 +91,8 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
     Z = np.zeros((len(alpha_nom_grid), len(t_gen_grid)))
 
     for j, t_gen in enumerate(t_gen_grid):
-        P_orphan_n = 1.0 - np.exp(-T_PROP / t_gen)
+        ratio = T_PROP / t_gen
+        P_orphan_n = ratio / (1.0 + ratio)
         denom = alpha_nom_grid + (1.0 - alpha_nom_grid) * (1.0 - P_orphan_n)
         alpha_eff = np.divide(
             alpha_nom_grid,
