@@ -1,5 +1,5 @@
 """
-横軸: ブロック生成時間 t_gen（秒）
+横軸: ブロック生成時間と伝播遅延の比 t_gen / t_prop（無次元）
 縦軸: 名目ハッシュレート割合 α
 色: DP による攻撃成功率
 
@@ -73,7 +73,7 @@ def precompute_dp_table(max_workers=None):
 
 
 # ==========================================
-# 2. ヒートマップ（横軸 = ブロック生成時間）
+# 2. ヒートマップ（横軸 = t_gen / t_prop）
 # ==========================================
 def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: bool = False):
     T_PROP = 2.0
@@ -102,7 +102,8 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
         )
         Z[:, j] = np.interp(alpha_eff, alphas_dp, probs_dp, left=0.0, right=1.0)
 
-    X, Y = np.meshgrid(t_gen_grid, alpha_nom_grid)
+    x_ratio = t_gen_grid / T_PROP
+    X, Y = np.meshgrid(x_ratio, alpha_nom_grid)
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -127,10 +128,11 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
         lambda_delta = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
         inv_lambda_delta = 1.0 / lambda_delta
         t_gen_thr = T_PROP * inv_lambda_delta
+        x_thr = t_gen_thr / T_PROP
         thr_mask = np.isfinite(t_gen_thr) & (t_gen_thr >= t_gen_min) & (t_gen_thr <= t_gen_max)
         y_thr = 0.5 + betas_thr
         (line_thr,) = ax.plot(
-            t_gen_thr[thr_mask],
+            x_thr[thr_mask],
             y_thr[thr_mask],
             color="blue",
             linewidth=2,
@@ -139,16 +141,17 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
         )
 
     ax.set_title(
-        "Required nominal hashrate vs block generation time (timewarp)\n"
+        "Required nominal hashrate vs $t_{\\mathrm{gen}}/t_{\\mathrm{prop}}$ (timewarp)\n"
         f"Fixed propagation delay $t_{{\\mathrm{{prop}}}} = {T_PROP}$ s"
     )
-    ax.set_xlabel("Block generation time $t_{\\mathrm{gen}}$ (s)")
+    ax.set_xlabel(r"Block time ratio $t_{\mathrm{gen}}/t_{\mathrm{prop}}$")
     ax.set_ylabel("Nominal hashrate fraction α")
-    ax.set_xlim(t_gen_min, t_gen_max)
+    ax.set_xlim(t_gen_min / T_PROP, t_gen_max / T_PROP)
     ax.set_xscale("log")
-    ax.set_xticks([0.5, 1.0, 10.0, 100.0, float(t_gen_max)])
+    _xt = np.array([0.5, 1.0, 10.0, 100.0, float(t_gen_max)]) / T_PROP
+    ax.set_xticks(_xt)
     ax.set_xticklabels(
-        [r"$0.5$", r"$10^{0}$", r"$10^{1}$", r"$10^{2}$", r"$6\times10^{2}$"]
+        [r"$0.25$", r"$0.5$", r"$5$", r"$50$", r"$3\times10^{2}$"]
     )
     ax.set_ylim(0.5, 1.0)
     ax.grid(True, linestyle=":", alpha=0.25, zorder=0)
@@ -176,7 +179,7 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="DP timewarp attack success heatmap vs block generation time."
+        description="DP timewarp attack success heatmap vs t_gen/t_prop."
     )
     parser.add_argument(
         "--show-pow-threshold",

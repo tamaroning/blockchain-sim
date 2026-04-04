@@ -1,7 +1,10 @@
 """
-横軸: ブロック生成時間 t_gen（秒）
+横軸: ブロック生成時間と伝播遅延の比 t_gen / t_prop（無次元）
 縦軸: 変換前の名目ハッシュレート割合 α
-色: DP による攻撃成功率
+
+γ = 0, 0.5, 1 それぞれについて、DP モデルで攻撃成功率が 50% となる名目 α の曲線を描画する。
+ヒートマップ（plot_required_hashrate_heatmap_block_generation_time）と同様、名目 α をそのまま timewarp に入れた 50% 曲線も重ねる。
+理論の true threshold（Dembo et al.）も重ねる。
 
 名目 α から実効ハッシュレート割合へは γ を含む有理式で写像し、
 timewarp 補正ではその実効割合を用いる（縦軸は変換前の名目 α）。
@@ -18,7 +21,6 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import BoundaryNorm
 
 # ==========================================
 # 1. 動的計画法 (DP) による攻撃成功率の計算
@@ -89,99 +91,158 @@ def effective_hashrate_fraction(alpha, gamma):
     return np.where(alpha > 0.5, 1.0, result)
 
 
+def attack_success_prob_nominal(alpha_nom, t_gen, gamma, t_prop, alphas_dp, probs_dp):
+    alpha_nom = float(alpha_nom)
+    alpha_eff_sm = float(effective_hashrate_fraction(np.array([alpha_nom]), gamma)[0])
+    ratio = t_prop / t_gen
+    p_orphan = ratio / (1.0 + ratio)
+    denom = alpha_eff_sm + (1.0 - alpha_eff_sm) * (1.0 - p_orphan)
+    if denom <= 0:
+        return 0.0
+    alpha_eff = alpha_eff_sm / denom
+    return float(np.interp(alpha_eff, alphas_dp, probs_dp, left=0.0, right=1.0))
+
+
+def attack_success_prob_heatmap_nominal(alpha_nom, t_gen, t_prop, alphas_dp, probs_dp):
+    """ヒートマップ script と同じ写像（名目 α を SM なしで timewarp に通す）。"""
+    alpha_nom = float(alpha_nom)
+    ratio = t_prop / t_gen
+    p_orphan = ratio / (1.0 + ratio)
+    denom = alpha_nom + (1.0 - alpha_nom) * (1.0 - p_orphan)
+    if denom <= 0:
+        return 0.0
+    alpha_eff = alpha_nom / denom
+    return float(np.interp(alpha_eff, alphas_dp, probs_dp, left=0.0, right=1.0))
+
+
+def nominal_alpha_for_target_prob(target, t_gen, gamma, t_prop, alphas_dp, probs_dp, n_iter=64):
+    lo, hi = 1e-12, 0.5
+
+    def p(a):
+        return attack_success_prob_nominal(a, t_gen, gamma, t_prop, alphas_dp, probs_dp)
+
+    p_lo, p_hi = p(lo), p(hi)
+    if p_hi < target:
+        return np.nan
+    if p_lo >= target:
+        return lo
+    for _ in range(n_iter):
+        mid = 0.5 * (lo + hi)
+        if p(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
+def nominal_alpha_for_target_prob_heatmap(target, t_gen, t_prop, alphas_dp, probs_dp, n_iter=64):
+    """ヒートマップと同じモデルで target 成功率となる名目 α（探索域はヒートマップの縦軸に合わせ [0.5, 1]）。"""
+    lo, hi = 0.5, 1.0 - 1e-12
+
+    def p(a):
+        return attack_success_prob_heatmap_nominal(a, t_gen, t_prop, alphas_dp, probs_dp)
+
+    p_lo, p_hi = p(lo), p(hi)
+    if p_hi < target:
+        return np.nan
+    if p_lo >= target:
+        return lo
+    for _ in range(n_iter):
+        mid = 0.5 * (lo + hi)
+        if p(mid) < target:
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
 # ==========================================
-# 2. ヒートマップ（横軸 = ブロック生成時間）
+# 2. γ = 0, 0.5, 1 の 50% 曲線 + true threshold
 # ==========================================
-def plot_attack_success_heatmap_by_block_generation_time(
-    *, show_pow_threshold: bool = False, gamma: float = 0.5
-):
+def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
     T_PROP = 2.0
     t_gen_min = 0.5
     t_gen_max = 600
-    n_t_gen = 220
-    n_alpha = 200
+    n_t_gen = 400
+    gammas = (0.0, 0.5, 1.0)
 
     print("DPモデルの事前計算中（並列）...")
     alphas_dp, probs_dp = precompute_dp_table()
     print("完了。プロットを生成します。")
 
     t_gen_grid = np.geomspace(t_gen_min, t_gen_max, n_t_gen)
-    alpha_nom_grid = np.linspace(0.0, 1.0, n_alpha)
-    alpha_eff_sm = effective_hashrate_fraction(alpha_nom_grid, gamma)
-    Z = np.zeros((len(alpha_nom_grid), len(t_gen_grid)))
-
-    for j, t_gen in enumerate(t_gen_grid):
-        ratio = T_PROP / t_gen
-        P_orphan_n = ratio / (1.0 + ratio)
-        denom = alpha_eff_sm + (1.0 - alpha_eff_sm) * (1.0 - P_orphan_n)
-        alpha_eff = np.divide(
-            alpha_eff_sm,
-            denom,
-            out=np.zeros_like(alpha_eff_sm),
-            where=denom != 0,
-        )
-        Z[:, j] = np.interp(alpha_eff, alphas_dp, probs_dp, left=0.0, right=1.0)
-
-    X, Y = np.meshgrid(t_gen_grid, alpha_nom_grid)
+    x_ratio = t_gen_grid / T_PROP
 
     fig, ax = plt.subplots(figsize=(10, 6))
+    colors = ("#c0392b", "#2980b9", "#27ae60")
+    for gamma, color in zip(gammas, colors):
+        alphas_nom = np.array(
+            [
+                nominal_alpha_for_target_prob(0.5, tg, gamma, T_PROP, alphas_dp, probs_dp)
+                for tg in t_gen_grid
+            ]
+        )
+        mask = np.isfinite(alphas_nom)
+        ax.plot(
+            x_ratio[mask],
+            alphas_nom[mask],
+            color=color,
+            linewidth=2.0,
+            zorder=3,
+            label=rf"50% success timwarp+SM, $\gamma={gamma:g}$",
+        )
 
-    boundaries = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
-    cmap = plt.colormaps["YlOrRd"].copy()
-    cmap.set_bad(color="#cccccc")
-    norm = BoundaryNorm(boundaries, ncolors=cmap.N, clip=True)
-
-    pcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=cmap, norm=norm, zorder=1)
-    cbar = fig.colorbar(pcm, ax=ax, label="Attack success probability (DP)", ticks=np.arange(0.0, 1.0, 0.1))
-    cbar.ax.minorticks_off()
-
-    cs_fine = ax.contour(X, Y, Z, levels=[0.2, 0.4, 0.6, 0.8], colors="k", linewidths=0.35, alpha=0.35, zorder=2)
-    ax.clabel(cs_fine, inline=True, fontsize=8, fmt="%.1f")
-    cs50 = ax.contour(X, Y, Z, levels=[0.5], colors=["#1a1a1a"], linewidths=2.0, linestyles="-", zorder=2)
-    ax.clabel(cs50, inline=True, fontsize=10, fmt=lambda _lev: "50%")
+    alphas_heatmap = np.array(
+        [
+            nominal_alpha_for_target_prob_heatmap(0.5, tg, T_PROP, alphas_dp, probs_dp)
+            for tg in t_gen_grid
+        ]
+    )
+    mask_hm = np.isfinite(alphas_heatmap)
+    ax.plot(
+        x_ratio[mask_hm],
+        alphas_heatmap[mask_hm],
+        color="#1a1a1a",
+        linewidth=2.0,
+        linestyle="-",
+        zorder=3,
+        label=r"50% success (DP), timewarp without SM",
+    )
 
     if show_pow_threshold:
-        # Dembo et al. true threshold: 1/(λΔ) = β(1−β)/(1−2β); λΔ = t_prop / t_gen ⇒ t_gen = t_prop / (λΔ).
-        # 縦位置は主軸の α と同一スケール: y = 0.5 + β*（旧 twinx の 0–0.5 と幾何的に同じ）。
         betas_thr = np.linspace(0.001, 0.499, 1000)
         lambda_delta = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
         inv_lambda_delta = 1.0 / lambda_delta
         t_gen_thr = T_PROP * inv_lambda_delta
+        x_thr = t_gen_thr / T_PROP
         thr_mask = np.isfinite(t_gen_thr) & (t_gen_thr >= t_gen_min) & (t_gen_thr <= t_gen_max)
         y_thr = 0.5 + betas_thr
         (line_thr,) = ax.plot(
-            t_gen_thr[thr_mask],
+            x_thr[thr_mask],
             y_thr[thr_mask],
-            color="blue",
-            linewidth=2,
-            zorder=5,
-            clip_on=True,
+            color="#6c3483",
+            linewidth=2.0,
+            linestyle="--",
+            zorder=4,
+            label=r"True threshold: $\alpha = 0.5+\beta^*(\lambda\Delta)$ (Dembo et al.)",
         )
 
     ax.set_title(
-        "Required nominal hashrate vs block generation time (timewarp)\n"
-        f"$\\gamma = {gamma}$, fixed propagation delay $t_{{\\mathrm{{prop}}}} = {T_PROP}$ s"
+        "Required nominal hashrate for 50% attack success vs $t_{\\mathrm{gen}}/t_{\\mathrm{prop}}$ (timewarp)\n"
+        rf"$\gamma \in \{{0,\,0.5,\,1\}}$, fixed propagation delay $t_{{\mathrm{{prop}}}} = {T_PROP}$ s"
     )
-    ax.set_xlabel("Block generation time $t_{\\mathrm{gen}}$ (s)")
+    ax.set_xlabel(r"Block time ratio $t_{\mathrm{gen}}/t_{\mathrm{prop}}$")
     ax.set_ylabel("Nominal hashrate fraction α (pre-mapping)")
-    ax.set_xlim(t_gen_min, t_gen_max)
+    ax.set_xlim(t_gen_min / T_PROP, t_gen_max / T_PROP)
     ax.set_xscale("log")
-    ax.set_xticks([0.5, 1.0, 10.0, 100.0, float(t_gen_max)])
+    _xt = np.array([0.5, 1.0, 10.0, 100.0, float(t_gen_max)]) / T_PROP
+    ax.set_xticks(_xt)
     ax.set_xticklabels(
-        [r"$0.5$", r"$10^{0}$", r"$10^{1}$", r"$10^{2}$", r"$6\times10^{2}$"]
+        [r"$0.25$", r"$0.5$", r"$5$", r"$50$", r"$3\times10^{2}$"]
     )
     ax.set_ylim(0.0, 1.0)
     ax.grid(True, linestyle=":", alpha=0.25, zorder=0)
-    if show_pow_threshold:
-        leg = fig.legend(
-            [line_thr],
-            [r"True threshold: $\alpha = 0.5+\beta^*(\lambda\Delta)$ (Dembo et al.)"],
-            loc="lower left",
-            bbox_to_anchor=(0.12, 0.02),
-            fontsize=9,
-            framealpha=0.92,
-        )
-        leg.set_zorder(10)
+    ax.legend(loc="lower right", fontsize=9, framealpha=0.92)
 
     out_path = (
         Path(__file__).resolve().parents[1]
@@ -196,20 +257,12 @@ def plot_attack_success_heatmap_by_block_generation_time(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="DP timewarp attack success heatmap vs block generation time."
+        description="DP timewarp: 50% success nominal α vs t_gen/t_prop for γ=0,0.5,1 and true threshold."
     )
     parser.add_argument(
-        "--show-pow-threshold",
+        "--no-pow-threshold",
         action="store_true",
-        help="Overlay Dembo et al. true threshold as α = 0.5+β* on the same y-axis as the heatmap. Default: off.",
-    )
-    parser.add_argument(
-        "--gamma",
-        type=float,
-        default=0.5,
-        help="Parameter γ in the effective hashrate fraction mapping (default: 0.5).",
+        help="Do not overlay Dembo et al. true threshold.",
     )
     args = parser.parse_args()
-    plot_attack_success_heatmap_by_block_generation_time(
-        show_pow_threshold=args.show_pow_threshold, gamma=args.gamma
-    )
+    plot_required_nominal_hashrate_curves(show_pow_threshold=not args.no_pow_threshold)
