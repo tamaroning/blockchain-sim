@@ -9,6 +9,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import argparse
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -74,7 +75,7 @@ def precompute_dp_table(max_workers=None):
 # ==========================================
 # 2. ヒートマップ（横軸 = ブロック生成時間）
 # ==========================================
-def plot_attack_success_heatmap_by_block_generation_time():
+def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: bool = False):
     T_PROP = 2.0
     t_gen_min = 0.5
     t_gen_max = 600
@@ -109,14 +110,39 @@ def plot_attack_success_heatmap_by_block_generation_time():
     cmap.set_bad(color="#cccccc")
     norm = BoundaryNorm(boundaries, ncolors=cmap.N, clip=True)
 
-    pcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=cmap, norm=norm)
+    pcm = ax.pcolormesh(X, Y, Z, shading="auto", cmap=cmap, norm=norm, zorder=1)
     cbar = fig.colorbar(pcm, ax=ax, label="Attack success probability (DP)", ticks=np.arange(0.0, 1.0, 0.1))
     cbar.ax.minorticks_off()
 
-    cs_fine = ax.contour(X, Y, Z, levels=[0.2, 0.4, 0.6, 0.8], colors="k", linewidths=0.35, alpha=0.35)
+    cs_fine = ax.contour(X, Y, Z, levels=[0.2, 0.4, 0.6, 0.8], colors="k", linewidths=0.35, alpha=0.35, zorder=2)
     ax.clabel(cs_fine, inline=True, fontsize=8, fmt="%.1f")
-    cs50 = ax.contour(X, Y, Z, levels=[0.5], colors=["#1a1a1a"], linewidths=2.0, linestyles="-")
+    cs50 = ax.contour(X, Y, Z, levels=[0.5], colors=["#1a1a1a"], linewidths=2.0, linestyles="-", zorder=2)
     ax.clabel(cs50, inline=True, fontsize=10, fmt=lambda _lev: "50%")
+
+    if show_pow_threshold:
+        # Dembo et al. true threshold: 1/(λΔ) = β(1−β)/(1−2β); λΔ = t_prop / t_gen ⇒ t_gen = t_prop / (λΔ).
+        # β は主軸の α(0.5–1) と縦方向が重ならないため、右軸 0–0.5 を同じ描画高さに割り当ててヒートマップの上に重ねる。
+        betas_thr = np.linspace(0.001, 0.499, 1000)
+        lambda_delta = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
+        inv_lambda_delta = 1.0 / lambda_delta
+        t_gen_thr = T_PROP * inv_lambda_delta
+        thr_mask = np.isfinite(t_gen_thr) & (t_gen_thr >= t_gen_min) & (t_gen_thr <= t_gen_max)
+
+        ax2 = ax.twinx()
+        ax2.set_ylim(0.0, 0.5)
+        ax2.set_ylabel(r"PoW race threshold $\beta^*$ (Dembo et al.)", fontsize=10)
+        ax2.tick_params(axis="y", labelsize=9)
+        ax2.grid(False)
+        (line_thr,) = ax2.plot(
+            t_gen_thr[thr_mask],
+            betas_thr[thr_mask],
+            color="blue",
+            linewidth=2,
+            zorder=5,
+            clip_on=True,
+        )
+        ax2.set_zorder(ax.get_zorder() + 1)
+        ax2.patch.set_visible(False)
 
     ax.set_title(
         "Required nominal hashrate vs block generation time (timewarp)\n"
@@ -131,7 +157,17 @@ def plot_attack_success_heatmap_by_block_generation_time():
         [r"$0.5$", r"$10^{0}$", r"$10^{1}$", r"$10^{2}$", r"$6\times10^{2}$"]
     )
     ax.set_ylim(0.5, 1.0)
-    ax.grid(True, linestyle=":", alpha=0.25)
+    ax.grid(True, linestyle=":", alpha=0.25, zorder=0)
+    if show_pow_threshold:
+        leg = fig.legend(
+            [line_thr],
+            [r"True threshold $\beta^*(\lambda\Delta)$ (same $x$ mapping)"],
+            loc="lower left",
+            bbox_to_anchor=(0.12, 0.02),
+            fontsize=9,
+            framealpha=0.92,
+        )
+        leg.set_zorder(10)
 
     out_path = (
         Path(__file__).resolve().parents[1]
@@ -145,4 +181,13 @@ def plot_attack_success_heatmap_by_block_generation_time():
 
 
 if __name__ == "__main__":
-    plot_attack_success_heatmap_by_block_generation_time()
+    parser = argparse.ArgumentParser(
+        description="DP timewarp attack success heatmap vs block generation time."
+    )
+    parser.add_argument(
+        "--show-pow-threshold",
+        action="store_true",
+        help="Overlay Dembo et al. PoW race β* curve (twin y-axis). Default: off.",
+    )
+    args = parser.parse_args()
+    plot_attack_success_heatmap_by_block_generation_time(show_pow_threshold=args.show_pow_threshold)
