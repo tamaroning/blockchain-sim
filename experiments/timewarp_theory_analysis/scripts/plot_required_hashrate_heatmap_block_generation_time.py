@@ -121,7 +121,7 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
 
     if show_pow_threshold:
         # Dembo et al. true threshold: 1/(λΔ) = β(1−β)/(1−2β); λΔ = t_prop / t_gen ⇒ t_gen = t_prop / (λΔ).
-        # β は主軸の α(0.5–1) と縦方向が重ならないため、右軸 0–0.5 を同じ描画高さに割り当ててヒートマップの上に重ねる。
+        # β は主軸の α(0.5–1) と同じ縦方向に重ねるため 0–0.5 を割り当てる。縦軸ラベルは右ではなく左側（外側オフセット）に統一。
         betas_thr = np.linspace(0.001, 0.499, 1000)
         lambda_delta = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
         inv_lambda_delta = 1.0 / lambda_delta
@@ -132,6 +132,10 @@ def plot_attack_success_heatmap_by_block_generation_time(*, show_pow_threshold: 
         ax2.set_ylim(0.0, 0.5)
         ax2.set_ylabel(r"PoW race threshold $\beta^*$ (Dembo et al.)", fontsize=10)
         ax2.tick_params(axis="y", labelsize=9)
+        ax2.yaxis.set_ticks_position("left")
+        ax2.yaxis.set_label_position("left")
+        ax2.spines["right"].set_visible(False)
+        ax2.spines["left"].set_position(("outward", 55))
         ax2.grid(False)
         (line_thr,) = ax2.plot(
             t_gen_thr[thr_mask],
@@ -187,7 +191,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--show-pow-threshold",
         action="store_true",
-        help="Overlay Dembo et al. PoW race β* curve (twin y-axis). Default: off.",
+        help="Overlay Dembo et al. PoW race β* curve (second y-scale on the left). Default: off.",
     )
     args = parser.parse_args()
     plot_attack_success_heatmap_by_block_generation_time(show_pow_threshold=args.show_pow_threshold)
