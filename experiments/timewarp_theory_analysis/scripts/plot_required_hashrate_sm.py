@@ -210,6 +210,7 @@ def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
     )
 
     if show_pow_threshold:
+        # Dembo et al.: λΔ = (1−2β)/(β(1−β)), 1/(λΔ) = t_gen/t_prop。β は攻撃者割合で縦軸の名目 α と同一（オフセットなし）。
         betas_thr = np.linspace(0.001, 1.0, 1000)
         lambda_delta = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
         inv_lambda_delta = 1.0 / lambda_delta
@@ -224,7 +225,7 @@ def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
             linewidth=2.0,
             linestyle="--",
             zorder=4,
-            label=r"True threshold (Dembo et al.)",
+            label=r"True threshold: $\alpha=\beta^*(\lambda\Delta)$ (Dembo et al.)",
         )
 
     ax.set_title(
