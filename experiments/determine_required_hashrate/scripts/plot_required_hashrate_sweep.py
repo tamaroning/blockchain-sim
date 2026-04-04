@@ -16,8 +16,8 @@ BASE_DIR = SCRIPT_PATH.parents[1]
 DEFAULT_CSV = BASE_DIR / "results" / "required_hashrate_sweep.csv"
 DEFAULT_PNG = BASE_DIR / "results" / "plots" / "required_hashrate_sweep.png"
 # README のスイープ範囲（70〜100%）に合わせる
-X_AXIS_PCT_MIN = 70
-X_AXIS_PCT_MAX = 100
+X_AXIS_PCT_MIN = 84
+X_AXIS_PCT_MAX = 91
 
 
 def build_parser() -> argparse.ArgumentParser:
