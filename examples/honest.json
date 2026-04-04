@@ -1,19 +1,19 @@
 {
   "nodes": [
     {
-      "hashrate": 300,
+      "hashrate": 3000000000000000000,
       "strategy": {
         "type": "honest"
       }
     },
     {
-      "hashrate": 300,
+      "hashrate": 3000000000000000000,
       "strategy": {
         "type": "honest"
       }
     },
     {
-      "hashrate": 300,
+      "hashrate": 3000000000000000000,
       "strategy": {
         "type": "honest"
       }
