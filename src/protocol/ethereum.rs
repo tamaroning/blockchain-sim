@@ -113,7 +113,8 @@ impl Protocol for EthereumProtocol {
             Difficulty::Ethereum(d) => d.as_u256(),
             Difficulty::Bitcoin(_) => unreachable!("difficulty/protocol mismatch"),
         };
-        let difficulty_adjustment = (parent_difficulty / U256::from(2048u64)) * U256::from(adjustment_factor.unsigned_abs());
+        let difficulty_adjustment = (parent_difficulty / U256::from(2048u64))
+            * U256::from(adjustment_factor.unsigned_abs());
 
         let uncle_adjustment = 0;
 
@@ -125,7 +126,8 @@ impl Protocol for EthereumProtocol {
         if uncle_adjustment > 0 {
             next_difficulty = next_difficulty.saturating_add(U256::from(uncle_adjustment as u64));
         } else if uncle_adjustment < 0 {
-            next_difficulty = next_difficulty.saturating_sub(U256::from((-uncle_adjustment) as u64));
+            next_difficulty =
+                next_difficulty.saturating_sub(U256::from((-uncle_adjustment) as u64));
         }
 
         /*

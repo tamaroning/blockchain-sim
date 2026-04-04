@@ -1,9 +1,7 @@
 use crate::{blockchain::BlockId, node::NodeId, simulator::Env};
 
 use super::{
-    selfish::SelfishMiningStrategy,
-    timewarp::timewarp_adjusted_timestamp,
-    Action, MiningStrategy,
+    Action, MiningStrategy, selfish::SelfishMiningStrategy, timewarp::timewarp_adjusted_timestamp,
 };
 
 /// Selfish mining と同一の分岐・公開ロジックに、timewarp と同様のタイムスタンプ調整を加えた戦略。
@@ -27,8 +25,7 @@ impl MiningStrategy for SelfishTimewarpStrategy {
         env: &Env,
         node_id: NodeId,
     ) -> Vec<Action> {
-        self.0
-            .on_mining_block(block_id, current_time, env, node_id)
+        self.0.on_mining_block(block_id, current_time, env, node_id)
     }
 
     fn on_receiving_block(

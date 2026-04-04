@@ -2,11 +2,11 @@ use crate::{block::Block, simulator::Env};
 use clap::ValueEnum;
 
 mod bitcoin;
-mod ethereum;
 mod difficulty;
+mod ethereum;
 
-use bitcoin::BitcoinProtocol;
 pub use bitcoin::BitcoinDifficulty;
+use bitcoin::BitcoinProtocol;
 pub use difficulty::Difficulty;
 pub use ethereum::EthereumDifficulty;
 use ethereum::EthereumProtocol;

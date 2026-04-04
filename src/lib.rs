@@ -1,6 +1,7 @@
 pub mod block;
 pub mod blockchain;
 pub mod event;
+pub mod event_queue;
 pub mod mining_strategy;
 pub mod node;
 pub mod profile;

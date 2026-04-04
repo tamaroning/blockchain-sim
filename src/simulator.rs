@@ -3,11 +3,11 @@ use std::collections::HashMap;
 use crate::block::{Block, GENESIS_BLOCK_ID};
 use crate::blockchain::{BlockId, Blockchain};
 use crate::event::{Event, EventType};
+use crate::event_queue::EventQueue;
 use crate::mining_strategy::Action;
 use crate::node::{Node, NodeId, NodeList};
 use crate::profile::NetworkProfile;
 use crate::protocol::Protocol;
-use priority_queue::PriorityQueue;
 use rand::prelude::*;
 use rand_distr::Exp;
 
@@ -43,8 +43,7 @@ impl Env {
 pub struct BlockchainSimulator {
     /// Configuration of the simulation.
     pub env: Env,
-    /// A priority queue for events.
-    event_queue: PriorityQueue<Event, i64>,
+    event_queue: EventQueue,
     /// Maximum height of the blocks created.
     current_round: i64,
     /// The current time of the simulation in ms.
@@ -74,9 +73,9 @@ impl BlockchainSimulator {
         let exp_dist = Exp::new(1.0).unwrap();
         let mut nodes = Vec::with_capacity(num_nodes);
 
-        // 指数分布でハッシュレートを生成し、ノードを作成
+        // Sample hashrates from an exponential distribution and create nodes.
         for i in 0..num_nodes {
-            let hashrate = (exp_dist.sample(&mut rng) * 10000.0) as i64 + 1; // 最低1は保証
+            let hashrate = (exp_dist.sample(&mut rng) * 10000.0) as i64 + 1; // Ensure at least 1.
             nodes.push(Node::new(NodeId::new(i), hashrate));
         }
         log::info!(
@@ -85,8 +84,6 @@ impl BlockchainSimulator {
         );
 
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
-
-        let event_queue = PriorityQueue::<Event, i64>::new();
 
         Self {
             env: Env::new(&nodes, delay, &*protocol),
@@ -97,11 +94,11 @@ impl BlockchainSimulator {
             end_round,
             rng,
             protocol,
-            event_queue,
+            event_queue: EventQueue::new(),
         }
     }
 
-    /// プロファイルからシミュレーターを作成
+    /// Build a simulator from a network profile.
     pub fn new_with_profile(
         profile: NetworkProfile,
         seed: u64,
@@ -111,7 +108,7 @@ impl BlockchainSimulator {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut nodes = Vec::with_capacity(profile.num_nodes());
 
-        // プロファイルからノードを作成
+        // Create nodes from the profile.
         for i in 0..profile.num_nodes() {
             let node_profile = &profile.nodes[i];
             let strategy = profile.create_strategy(i)?;
@@ -123,7 +120,6 @@ impl BlockchainSimulator {
         }
 
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
-        let event_queue = PriorityQueue::<Event, i64>::new();
         let rng = StdRng::seed_from_u64(seed);
 
         Ok(Self {
@@ -135,18 +131,8 @@ impl BlockchainSimulator {
             end_round,
             rng,
             protocol,
-            event_queue,
+            event_queue: EventQueue::new(),
         })
-    }
-
-    fn enqueue_event(&mut self, task: Event) {
-        let time = task.time();
-        // PriorityQueueは最大キューなので符号反転する
-        self.event_queue.push(task, -time);
-    }
-
-    fn pop_event(&mut self) -> Option<Event> {
-        self.event_queue.pop().map(|(task, _)| task)
     }
 
     fn propagation_time(&self, from: NodeId, to: NodeId) -> i64 {
@@ -154,11 +140,10 @@ impl BlockchainSimulator {
     }
 
     pub fn enqueue_actions(&mut self, node_id: NodeId, actions: &[Action]) {
-        // アクションを発行した時間
-        // アクションの完了時間に対応するイベントがイベントキューにエンキューされる
+        // Time when actions are issued; events are scheduled at their completion time.
         let base_time = self.current_time;
         for action in actions {
-            // actionに対応するイベントタイプを作成
+            // Build the event type for this action.
             let mut event_type = match action {
                 Action::Propagate { block_id, to } => {
                     // Avoid self-propagation.
@@ -179,7 +164,7 @@ impl BlockchainSimulator {
                 },
             };
 
-            // イベントキューへのイベントのエンキューと、イベントキューのクリーンアップ(必要なら)
+            // Enqueue the event (and supersede prior mining events when needed).
             match event_type {
                 EventType::BlockGeneration {
                     minter,
@@ -197,20 +182,7 @@ impl BlockchainSimulator {
                         new_difficulty.calculate_mining_time(&mut self.rng, minter_hashrate);
                     let next_mining_time = base_time + generation_time;
 
-                    // すでにキューにある同じノードのマイニングタスクを削除
-                    self.event_queue.retain(|task, _| {
-                        let EventType::BlockGeneration {
-                            minter: event_minter,
-                            prev_block_id: _,
-                            block_id: _,
-                        } = task.event_type()
-                        else {
-                            return true;
-                        };
-                        *event_minter != minter
-                    });
-
-                    // ブロックを作成
+                    // Create the block.
                     let node = self.nodes.get_node(minter);
                     let new_block_height = mining_base_block.height() + 1;
                     let timestamp = node.mining_strategy().handle_timestamp(
@@ -219,8 +191,8 @@ impl BlockchainSimulator {
                         new_block_height,
                         &self.env,
                     );
-                    let cumulative_chain_weight = mining_base_block.cumulative_chain_weight()
-                        + new_difficulty.chain_weight();
+                    let cumulative_chain_weight =
+                        mining_base_block.cumulative_chain_weight() + new_difficulty.chain_weight();
                     let new_block = Block::new(
                         new_block_height,
                         Some(prev_block_id),
@@ -255,7 +227,8 @@ impl BlockchainSimulator {
                         unreachable!("event_type should be BlockGeneration");
                     };
                     *block_id = new_block.id();
-                    self.enqueue_event(Event::new(next_mining_time, event_type));
+                    let mining_event = Event::new(next_mining_time, event_type);
+                    self.event_queue.push_mining(mining_event);
                     self.env.blockchain.add_block(new_block);
                 }
                 EventType::Propagation {
@@ -265,7 +238,7 @@ impl BlockchainSimulator {
                 } => {
                     let prop_delay = self.propagation_time(from, to);
                     let event_time = base_time + prop_delay;
-                    self.enqueue_event(Event::new(event_time, event_type));
+                    self.event_queue.push(Event::new(event_time, event_type));
                 }
             }
         }
@@ -276,7 +249,10 @@ impl BlockchainSimulator {
         self.enqueue_first_mining_task();
 
         while !self.event_queue.is_empty() && self.current_round < self.end_round {
-            let current_event = self.pop_event().expect("Task queue should not be empty");
+            let current_event = self
+                .event_queue
+                .pop()
+                .expect("Task queue should not be empty");
             self.current_time = current_event.time();
 
             match current_event.event_type() {
@@ -311,7 +287,7 @@ impl BlockchainSimulator {
     fn handle_block_generation(&mut self, minter: NodeId, block_id: BlockId) {
         let new_block = self.env.blockchain.get_block(block_id).unwrap();
 
-        // コールバックを呼び出してタスクをスケジュール
+        // Run strategy callback and schedule follow-up tasks.
         let actions = self
             .nodes
             .get_node_mut(minter)
@@ -334,7 +310,7 @@ impl BlockchainSimulator {
     }
 
     fn handle_propagation(&mut self, from: NodeId, to: NodeId, block_id: BlockId) {
-        // コールバックを呼び出してタスクをスケジュール
+        // Run strategy callback and schedule follow-up tasks.
         let actions = self
             .nodes
             .get_node_mut(to)
@@ -385,7 +361,7 @@ impl BlockchainSimulator {
         log::info!("- Total blocks: {}", self.env.blockchain.len());
         let main_chain_length = self.env.blockchain.max_height();
         log::info!("- Main chain length: {}", main_chain_length);
-        // diffculty
+        // difficulty
         log::info!(
             "Difficulty: {:.4}",
             self.env
@@ -399,12 +375,12 @@ impl BlockchainSimulator {
         );
     }
 
-    /// メインチェーンをトラバーサルして報酬を計算し、mining fairnessを表示する
-    /// mining fairness = rewardのシェア / hashrateのシェア
+    /// Traverse the main chain, compute rewards, and print mining fairness
+    /// (fairness = reward share / hashrate share).
     pub fn print_mining_fairness(&self) {
         let main_chain = self.env.blockchain.get_main_chain();
 
-        // 各ノードの報酬をカウント（ジェネシスブロックを除く）
+        // Count rewards per node (exclude genesis minter).
         let mut rewards: HashMap<NodeId, f64> = HashMap::new();
 
         for &block_id in &main_chain {
@@ -416,10 +392,10 @@ impl BlockchainSimulator {
             }
         }
 
-        // 全ノードの報酬の合計を計算
+        // Total reward across nodes.
         let total_reward: f64 = rewards.values().sum::<f64>();
 
-        // mining fairness = rewardのシェア / hashrateのシェア を計算
+        // fairness = reward_share / hashrate_share
         let mut fairness_data: Vec<(NodeId, f64, f64, f64, f64, f64)> = self
             .nodes
             .nodes()
@@ -428,21 +404,21 @@ impl BlockchainSimulator {
                 let reward = *rewards.get(&node.id()).unwrap_or(&0.0);
                 let hashrate = node.hashrate() as f64;
 
-                // rewardのシェア = そのノードの報酬 / 全ノードの報酬の合計
+                // reward_share = this node's reward / sum of all rewards
                 let reward_share = if total_reward > 0.0 {
                     reward / total_reward
                 } else {
                     0.0
                 };
 
-                // hashrateのシェア = そのノードのハッシュレート / 全ノードのハッシュレートの合計
+                // hashrate_share = this node's hashrate / total hashrate
                 let hashrate_share = if self.total_hashrate > 0 {
                     hashrate / self.total_hashrate as f64
                 } else {
                     0.0
                 };
 
-                // mining fairness = rewardのシェア / hashrateのシェア
+                // fairness = reward_share / hashrate_share
                 let fairness = if hashrate_share > 0.0 {
                     reward_share / hashrate_share
                 } else {
@@ -460,10 +436,10 @@ impl BlockchainSimulator {
             })
             .collect();
 
-        // mining fairnessが高い順にソート
+        // Sort by fairness descending.
         fairness_data.sort_by(|a, b| b.5.partial_cmp(&a.5).unwrap_or(std::cmp::Ordering::Equal));
 
-        // ノード数が30以下の場合は全て表示、それ以上の場合は上位5位のみ表示
+        // Show all nodes if there are at most 30; otherwise cap at 30 rows.
         let display_count = if self.nodes.nodes().len() <= 30 {
             self.nodes.nodes().len()
         } else {
