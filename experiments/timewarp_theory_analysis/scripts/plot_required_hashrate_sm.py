@@ -3,7 +3,7 @@
 縦軸: 変換前の名目ハッシュレート割合 α
 
 γ = 0, 0.5, 1 それぞれについて、DP モデルで攻撃成功率が 50% となる名目 α の曲線を描画する。
-ヒートマップ（plot_required_hashrate_heatmap_block_generation_time）と同様、名目 α をそのまま timewarp に入れた 50% 曲線も重ねる。
+ヒートマップと同じ timewarp（SM なし）写像で 50% となる名目 α の曲線も重ねる（探索は α ∈ (0,1)。ヒートマップ図の縦軸は [0.5,1] 表示のみ）。
 理論の true threshold（Dembo et al.）も重ねる。
 
 名目 α から実効ハッシュレート割合へは γ を含む有理式で写像し、
@@ -21,6 +21,7 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import LogFormatterMathtext, LogLocator
 
 # ==========================================
 # 1. 動的計画法 (DP) による攻撃成功率の計算
@@ -136,8 +137,12 @@ def nominal_alpha_for_target_prob(target, t_gen, gamma, t_prop, alphas_dp, probs
 
 
 def nominal_alpha_for_target_prob_heatmap(target, t_gen, t_prop, alphas_dp, probs_dp, n_iter=64):
-    """ヒートマップと同じモデルで target 成功率となる名目 α（探索域はヒートマップの縦軸に合わせ [0.5, 1]）。"""
-    lo, hi = 0.5, 1.0 - 1e-12
+    """
+    timewarp（SM なし）で target 成功率となる名目 α を二分探索。
+    `attack_success_prob_heatmap_nominal` は α ∈ (0,1) で単調（α_eff 単調 → DP 補間単調）。
+    ヒートマップ PNG の縦軸は表示上 [0.5, 1] に切っているが、式は小さい α も同じ。
+    """
+    lo, hi = 1e-12, 1.0 - 1e-12
 
     def p(a):
         return attack_success_prob_heatmap_nominal(a, t_gen, t_prop, alphas_dp, probs_dp)
@@ -156,12 +161,30 @@ def nominal_alpha_for_target_prob_heatmap(target, t_gen, t_prop, alphas_dp, prob
     return 0.5 * (lo + hi)
 
 
+def _beta_for_t_prop_over_t_gen(*, t_prop: float, t_gen: float) -> float:
+    """
+    λΔ = t_prop / t_gen = (1 − 2β) / (β(1−β)) を満たす β ∈ (0, 0.5) を返す。
+    同値な二次方程式: R β² − (R+2) β + 1 = 0, R = t_prop / t_gen。
+    """
+    R = t_prop / float(t_gen)
+    disc = (R + 2.0) ** 2 - 4.0 * R
+    if disc < 0.0:
+        return float("nan")
+    s = float(np.sqrt(disc))
+    two_r = 2.0 * R
+    for beta in (((R + 2.0) - s) / two_r, ((R + 2.0) + s) / two_r):
+        if 0.0 < beta < 0.5:
+            return float(beta)
+    return float("nan")
+
+
 # ==========================================
 # 2. γ = 0, 0.5, 1 の 50% 曲線 + true threshold
 # ==========================================
 def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
     T_PROP = 2.0
-    t_gen_min = 0.5
+    x_lim_lo = 0.01
+    t_gen_min = x_lim_lo * T_PROP
     t_gen_max = 600
     n_t_gen = 400
     gammas = (0.0, 0.5, 1.0)
@@ -212,20 +235,32 @@ def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
     if show_pow_threshold:
         # Dembo et al.: β = (1−β)/(1+(1−β)·λΔ), λΔ = t_prop/t_gen と同一視。
         # 変形すると t_prop/t_gen = (1−2β)/(β(1−β)), 縦軸は式の右辺（曲線上で β と一致）。
-        betas_thr = np.linspace(0.001, 1.0, 1000)
+        # β ∈ (0, 0.5) のみ物理的（λΔ > 0）。β → 0.5− で t_gen → ∞ となるため、
+        # β > 0.5 のサンプルや粗い格子だと t_gen_max 手前で点が途切れる。右端は解析的に閉じる。
+        betas_thr = np.linspace(0.001, 0.499, 4000)
         ratio_prop_gen = (1.0 - 2.0 * betas_thr) / (betas_thr * (1.0 - betas_thr))
         t_gen_thr = T_PROP / ratio_prop_gen
         x_thr = t_gen_thr / T_PROP
         thr_mask = np.isfinite(t_gen_thr) & (t_gen_thr >= t_gen_min) & (t_gen_thr <= t_gen_max)
         y_thr = (1.0 - betas_thr) / (1.0 + (1.0 - betas_thr) * ratio_prop_gen)
+        x_p = x_thr[thr_mask]
+        y_p = y_thr[thr_mask]
+        x_right = t_gen_max / T_PROP
+        beta_right = _beta_for_t_prop_over_t_gen(t_prop=T_PROP, t_gen=t_gen_max)
+        if np.isfinite(beta_right):
+            r_end = T_PROP / t_gen_max
+            y_right = (1.0 - beta_right) / (1.0 + (1.0 - beta_right) * r_end)
+            if x_p.size == 0 or x_p[-1] < x_right * (1.0 - 1e-9):
+                x_p = np.append(x_p, x_right)
+                y_p = np.append(y_p, y_right)
         (line_thr,) = ax.plot(
-            x_thr[thr_mask],
-            y_thr[thr_mask],
+            x_p,
+            y_p,
             color="#6c3483",
             linewidth=2.0,
             linestyle="--",
             zorder=4,
-            label=r"True threshold: $\alpha=\beta^*(\lambda\Delta)$ (Dembo et al.)",
+            label=r"True threshold: $\alpha=\beta_{\mathrm{crit}}(\lambda\Delta)$ (Dembo et al.)",
         )
 
     ax.set_title(
@@ -233,14 +268,12 @@ def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
         rf"$\gamma \in \{{0,\,0.5,\,1\}}$, fixed propagation delay $t_{{\mathrm{{prop}}}} = {T_PROP}$ s"
     )
     ax.set_xlabel(r"Block time ratio $t_{\mathrm{gen}}/t_{\mathrm{prop}}$")
-    ax.set_ylabel("Nominal hashrate fraction α (pre-mapping)")
-    ax.set_xlim(t_gen_min / T_PROP, t_gen_max / T_PROP)
+    ax.set_ylabel("Nominal hashrate fraction α")
+    ax.set_xlim(x_lim_lo, t_gen_max / T_PROP)
     ax.set_xscale("log")
-    _xt = np.array([0.5, 1.0, 10.0, 100.0, float(t_gen_max)]) / T_PROP
-    ax.set_xticks(_xt)
-    ax.set_xticklabels(
-        [r"$0.25$", r"$0.5$", r"$5$", r"$50$", r"$3\times10^{2}$"]
-    )
+    # 横軸は t_gen/t_prop。対数軸では 10 の冪を主要目盛りにし、0.25/0.5 のような中途半端なラベルを避ける。
+    ax.xaxis.set_major_locator(LogLocator(base=10))
+    ax.xaxis.set_major_formatter(LogFormatterMathtext())
     ax.set_ylim(0.0, 1.0)
     ax.grid(True, linestyle=":", alpha=0.25, zorder=0)
     ax.legend(loc="lower right", fontsize=9, framealpha=0.92)
