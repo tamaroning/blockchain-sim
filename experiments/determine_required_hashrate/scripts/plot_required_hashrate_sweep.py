@@ -52,6 +52,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="保存に加えてウィンドウで表示する（GUI バックエンドが必要）",
     )
+    p.add_argument(
+        "--min",
+        type=float,
+        default=None,
+        dest="pct_min",
+        metavar="PCT",
+        help=f"x 軸（攻撃者ハッシュレート [%%]）の下限（省略時: {X_AXIS_PCT_MIN}）",
+    )
+    p.add_argument(
+        "--max-pct",
+        type=float,
+        default=None,
+        dest="pct_max",
+        metavar="PCT",
+        help=f"x 軸（攻撃者ハッシュレート [%%]）の上限（省略時: {X_AXIS_PCT_MAX}）",
+    )
     p.add_argument("--figsize", type=float, nargs=2, default=(10.0, 5.0), metavar=("W", "H"))
     return p
 
@@ -101,6 +117,11 @@ def main() -> None:
     df = load_sweep_csv(csv_path.resolve())
     summary = summarize_by_percent(df)
 
+    x_min = X_AXIS_PCT_MIN if args.pct_min is None else args.pct_min
+    x_max = X_AXIS_PCT_MAX if args.pct_max is None else args.pct_max
+    if x_min >= x_max:
+        raise ValueError(f"--min ({x_min}) は --max-pct ({x_max}) より小さい必要があります")
+
     fig, ax = plt.subplots(figsize=(args.figsize[0], args.figsize[1]), layout="constrained")
 
     ax.plot(
@@ -112,7 +133,7 @@ def main() -> None:
     )
     ax.set_xlabel("Attacker hashrate share [%]")
     ax.set_ylabel("Success rate [%]")
-    ax.set_xlim(X_AXIS_PCT_MIN, X_AXIS_PCT_MAX)
+    ax.set_xlim(x_min, x_max)
     ax.set_ylim(-5, 105)
     ax.grid(True, alpha=0.3)
     title = (

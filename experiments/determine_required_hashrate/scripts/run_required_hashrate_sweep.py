@@ -51,8 +51,18 @@ def difficulty_threshold(delay_ms: int, total_hashrate: int) -> float:
     return (delay_ms * float(total_hashrate) / float(2**32)) / 4.0
 
 
+def percent_sweep(min_pct: float, max_pct: float, step: float) -> list[float]:
+    """0.1%% 単位で刻みを解釈し、浮動小数誤差を避けてパーセント列を返す。"""
+    min_t = int(round(min_pct * 10))
+    max_t = int(round(max_pct * 10))
+    step_t = int(round(step * 10))
+    if step_t <= 0:
+        raise ValueError("--step は正で、かつ 0.1%% 単位（例: 0.5）である必要があります")
+    return [t / 10.0 for t in range(min_t, max_t + 1, step_t)]
+
+
 def ensure_profile(
-    attacker_percent: int,
+    attacker_percent: float,
     total_hashrate: int,
     profile_dir: Path,
     *,
@@ -61,14 +71,16 @@ def ensure_profile(
     if not (0 <= attacker_percent <= 100):
         raise ValueError("attacker_percent は 0〜100")
 
-    attacker_hr = (total_hashrate * attacker_percent) // 100
+    bps = int(round(attacker_percent * 100))
+    attacker_hr = (total_hashrate * bps) // 10_000
     defender_hr = total_hashrate - attacker_hr
     if defender_hr < 0:
         raise ValueError("defender hashrate が負になりました")
 
     strategy_type = "selfish_timewarp" if selfish_timewarp else "timewarp"
     profile_dir.mkdir(parents=True, exist_ok=True)
-    profile_path = profile_dir / f"{strategy_type}_attacker_{attacker_percent:03d}pct.json"
+    pct_tenths = int(round(attacker_percent * 10))
+    profile_path = profile_dir / f"{strategy_type}_attacker_{pct_tenths:04d}pct.json"
     profile: dict[str, Any] = {
         "nodes": [
             {"hashrate": attacker_hr, "strategy": {"type": strategy_type}},
@@ -125,7 +137,7 @@ def run_single_job(
         Path,
         Path,
         Path,
-        int,
+        float,
         int,
         int,
         str,
@@ -150,7 +162,8 @@ def run_single_job(
     ) = args_tuple
 
     results_dir.mkdir(parents=True, exist_ok=True)
-    out_csv = results_dir / f"raw_pct_{attacker_percent:03d}_run_{run_index:04d}.csv"
+    pct_tenths = int(round(attacker_percent * 10))
+    out_csv = results_dir / f"raw_pct_{pct_tenths:04d}_run_{run_index:04d}.csv"
     run_one_simulation(
         binary_path=binary_path,
         profile_path=profile_path,
@@ -178,21 +191,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--min-pct",
-        type=int,
-        default=70,
+        type=float,
+        default=70.0,
         help="攻撃者ハッシュレート割合の下限 [%%]（デフォルト: 70）",
     )
     p.add_argument(
         "--max-pct",
-        type=int,
-        default=100,
+        type=float,
+        default=100.0,
         help="攻撃者ハッシュレート割合の上限 [%%]（デフォルト: 100）",
     )
     p.add_argument(
         "--step",
-        type=int,
-        default=1,
-        help="割合の刻み（デフォルト: 1）",
+        type=float,
+        default=0.5,
+        help="割合の刻み [%%]（デフォルト: 0.5）",
     )
     p.add_argument(
         "--runs",
@@ -284,8 +297,8 @@ def main() -> None:
     args = build_parser().parse_args()
     base_dir = SCRIPT_PATH.parents[1]
 
-    if args.min_pct > args.max_pct or args.step <= 0 or args.runs <= 0:
-        raise ValueError("--min-pct <= --max-pct、--step > 0、--runs > 0 が必要です")
+    if args.min_pct > args.max_pct or args.runs <= 0:
+        raise ValueError("--min-pct <= --max-pct、--runs > 0 が必要です")
 
     total_hr = args.total_hashrate if args.total_hashrate is not None else default_total_hashrate()
     if args.total_hashrate is None and not args.quiet:
@@ -297,7 +310,7 @@ def main() -> None:
         )
 
     thresh = difficulty_threshold(args.delay, total_hr)
-    percents = list(range(args.min_pct, args.max_pct + 1, args.step))
+    percents = percent_sweep(args.min_pct, args.max_pct, args.step)
 
     profile_dir = base_dir / "profiles"
     profiles: dict[int, Path] = {}
@@ -331,9 +344,10 @@ def main() -> None:
         )
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
-    def make_seed(pct: int, run_i: int) -> int:
+    def make_seed(pct: float, run_i: int) -> int:
         if args.base_seed is not None:
-            return (args.base_seed + pct * 100_000 + run_i) % (2**63)
+            pct_i = int(round(pct * 10))
+            return (args.base_seed + pct_i * 10_000 + run_i) % (2**63)
         return int.from_bytes(os.urandom(8), "little") & ((1 << 63) - 1)
 
     jobs: list[tuple[Any, ...]] = []
@@ -392,7 +406,8 @@ def main() -> None:
     if not args.keep_raw_csv:
         for pct in percents:
             for r in range(1, args.runs + 1):
-                p = results_dir / f"raw_pct_{pct:03d}_run_{r:04d}.csv"
+                pct_tenths = int(round(pct * 10))
+                p = results_dir / f"raw_pct_{pct_tenths:04d}_run_{r:04d}.csv"
                 if p.exists():
                     p.unlink()
 

@@ -3,15 +3,17 @@
 シミュレーション実行:
 ```sh
 uv run python experiments/determine_required_hashrate/scripts/run_required_hashrate_sweep.py \
-  --parallel 10 --runs 100 --min-pct 84 --max-pct 90 --quiet
+  --parallel 10 --runs 30 --min-pct 86 --max-pct 90 --quiet --step 0.5
 
 uv run python experiments/determine_required_hashrate/scripts/run_required_hashrate_sweep.py \
-  --parallel 10 --runs 100 --min-pct 45 --max-pct 49 --quiet --selfish-timewarp
+  --parallel 10 --runs 30 --min-pct 47 --max-pct 50 --quiet --selfish-timewarp --step 0.5
 ```
 
 plot:
-```
-uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --selfish-timewarp
+```bash
+uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --min 86 --max 89
+
+uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --min 47 --max 50 --selfish-timewarp
 ```
 
 300エポックのシミュレーションを行い、time warp攻撃により難易度が無限降下するのに必要な攻撃者のハッシュレート割合を調べる
