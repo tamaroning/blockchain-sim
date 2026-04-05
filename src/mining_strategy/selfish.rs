@@ -49,7 +49,13 @@ impl SelfishMiningStrategy {
         self.private_chain
     }
 
-    fn get_first_unpublished_private_block(&self, env: &Env) -> BlockId {
+    /// 追跡中の `private_branch_len` 本だけを走査して未公開ブロックを探す。
+    ///
+    /// 高さ差 `delta_prev > 2` のとき古典的な selfish では未公開が必ず存在する前提だが、
+    /// 可変難易度（Timewarp 等）では「高さでは大きくリードしているのに `private_branch_len == 0`」
+    /// や「分岐上はすべて `published_blocks` 済み」が起こりうる。その場合は公開すべきブロックが無いので
+    /// `None` を返し、呼び出し側でパニックさせずにスキップする。
+    fn get_first_unpublished_private_block(&self, env: &Env) -> Option<BlockId> {
         let mut current_id = self.private_chain;
         let mut unpublished = Vec::new();
 
@@ -61,9 +67,7 @@ impl SelfishMiningStrategy {
             current_id = block.prev_block_id().unwrap();
         }
 
-        *unpublished
-            .last()
-            .expect("delta_prev > 2 implies at least one unpublished private block")
+        unpublished.last().copied()
     }
 
     fn publish_block(&mut self, block: BlockId, env: &Env) -> Vec<Action> {
@@ -174,9 +178,8 @@ impl MiningStrategy for SelfishMiningStrategy {
                 actions.extend(self.publish_block(private_block_id, env));
             }
             self.private_branch_len = 0;
-        } else {
+        } else if let Some(published_block_id) = self.get_first_unpublished_private_block(env) {
             // Publish the first unpublished block in the private chain.
-            let published_block_id = self.get_first_unpublished_private_block(env);
             actions.extend(self.publish_block(published_block_id, env));
         }
         actions
