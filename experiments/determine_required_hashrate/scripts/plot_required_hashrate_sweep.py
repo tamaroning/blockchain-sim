@@ -1,7 +1,8 @@
 """
-required_hashrate_sweep.csv（run_required_hashrate_sweep.py の出力）を読み、
+required_hashrate_sweep*.csv（run_required_hashrate_sweep.py の出力）を読み、
 攻撃者ハッシュレート割合ごとの閾値到達率をプロットする。
 blocks_to_threshold == -1 はシミュレーション終了まで未到達。
+--selfish-timewarp で selfish スイープ用のデフォルト入出力に切り替え可能。
 """
 from __future__ import annotations
 
@@ -14,7 +15,9 @@ import pandas as pd
 SCRIPT_PATH = Path(__file__).resolve()
 BASE_DIR = SCRIPT_PATH.parents[1]
 DEFAULT_CSV = BASE_DIR / "results" / "required_hashrate_sweep.csv"
+DEFAULT_CSV_SELFISH = BASE_DIR / "results" / "required_hashrate_sweep_selfish_timewarp.csv"
 DEFAULT_PNG = BASE_DIR / "results" / "plots" / "required_hashrate_sweep.png"
+DEFAULT_PNG_SELFISH = BASE_DIR / "results" / "plots" / "required_hashrate_sweep_selfish_timewarp.png"
 # README のスイープ範囲（70〜100%）に合わせる
 X_AXIS_PCT_MIN = 84
 X_AXIS_PCT_MAX = 91
@@ -25,14 +28,24 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--input",
         type=Path,
-        default=DEFAULT_CSV,
-        help=f"集約 CSV（デフォルト: {DEFAULT_CSV}）",
+        default=None,
+        help=(
+            "集約 CSV（省略時: timewarp 用または --selfish-timewarp 用のデフォルト）"
+        ),
     )
     p.add_argument(
         "--output",
         type=Path,
-        default=DEFAULT_PNG,
-        help=f"出力 PNG（デフォルト: {DEFAULT_PNG}）",
+        default=None,
+        help="出力 PNG（省略時: timewarp 用または --selfish-timewarp 用のデフォルト）",
+    )
+    p.add_argument(
+        "--selfish-timewarp",
+        action="store_true",
+        help=(
+            "デフォルトの入出力を selfish_timewarp スイープ用 "
+            f"（{DEFAULT_CSV_SELFISH.name} / {DEFAULT_PNG_SELFISH.name}）にする"
+        ),
     )
     p.add_argument(
         "--show",
@@ -68,13 +81,24 @@ def summarize_by_percent(df: pd.DataFrame) -> pd.DataFrame:
 def main() -> None:
     args = build_parser().parse_args()
 
+    csv_path = (
+        args.input
+        if args.input is not None
+        else (DEFAULT_CSV_SELFISH if args.selfish_timewarp else DEFAULT_CSV)
+    )
+    png_path = (
+        args.output
+        if args.output is not None
+        else (DEFAULT_PNG_SELFISH if args.selfish_timewarp else DEFAULT_PNG)
+    )
+
     import matplotlib
 
     if not args.show:
         matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    df = load_sweep_csv(args.input.resolve())
+    df = load_sweep_csv(csv_path.resolve())
     summary = summarize_by_percent(df)
 
     fig, ax = plt.subplots(figsize=(args.figsize[0], args.figsize[1]), layout="constrained")
@@ -91,11 +115,14 @@ def main() -> None:
     ax.set_xlim(X_AXIS_PCT_MIN, X_AXIS_PCT_MAX)
     ax.set_ylim(-5, 105)
     ax.grid(True, alpha=0.3)
-    ax.set_title(
-        "Timewarp sweep: attacker share vs. reaching D_th (run_required_hashrate_sweep.csv)"
+    title = (
+        "Selfish timewarp sweep: attacker share vs. reaching D_th"
+        if args.selfish_timewarp
+        else "Timewarp sweep: attacker share vs. reaching D_th"
     )
+    ax.set_title(title)
 
-    out = args.output.resolve()
+    out = png_path.resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=150)
     print(f"保存しました: {out}")

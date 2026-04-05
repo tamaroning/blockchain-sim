@@ -51,7 +51,13 @@ def difficulty_threshold(delay_ms: int, total_hashrate: int) -> float:
     return (delay_ms * float(total_hashrate) / float(2**32)) / 4.0
 
 
-def ensure_profile(attacker_percent: int, total_hashrate: int, profile_dir: Path) -> Path:
+def ensure_profile(
+    attacker_percent: int,
+    total_hashrate: int,
+    profile_dir: Path,
+    *,
+    selfish_timewarp: bool,
+) -> Path:
     if not (0 <= attacker_percent <= 100):
         raise ValueError("attacker_percent は 0〜100")
 
@@ -60,11 +66,12 @@ def ensure_profile(attacker_percent: int, total_hashrate: int, profile_dir: Path
     if defender_hr < 0:
         raise ValueError("defender hashrate が負になりました")
 
+    strategy_type = "selfish_timewarp" if selfish_timewarp else "timewarp"
     profile_dir.mkdir(parents=True, exist_ok=True)
-    profile_path = profile_dir / f"timewarp_attacker_{attacker_percent:03d}pct.json"
+    profile_path = profile_dir / f"{strategy_type}_attacker_{attacker_percent:03d}pct.json"
     profile: dict[str, Any] = {
         "nodes": [
-            {"hashrate": attacker_hr, "strategy": {"type": "timewarp"}},
+            {"hashrate": attacker_hr, "strategy": {"type": strategy_type}},
             {"hashrate": defender_hr, "strategy": {"type": "honest"}},
         ]
     }
@@ -222,13 +229,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=None,
-        help="集約 CSV（デフォルト: experiments/determine_required_hashrate/results/required_hashrate_sweep.csv）",
+        help=(
+            "集約 CSV（省略時: timewarp は required_hashrate_sweep.csv、"
+            "--selfish-timewarp 時は required_hashrate_sweep_selfish_timewarp.csv）"
+        ),
     )
     p.add_argument(
         "--results-dir",
         type=Path,
         default=None,
-        help="中間 CSV（各 run）の保存先（デフォルト: experiments/determine_required_hashrate/results/runs/）",
+        help=(
+            "中間 CSV（各 run）の保存先（省略時: runs/ または --selfish-timewarp 時は runs_selfish_timewarp/）"
+        ),
     )
     p.add_argument(
         "--parallel",
@@ -257,6 +269,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="スケールに関する注意メッセージを出さない",
     )
+    p.add_argument(
+        "--selfish-timewarp",
+        action="store_true",
+        help=(
+            "攻撃者戦略を selfish_timewarp にする。"
+            "集約 CSV・中間 run のデフォルト保存先は timewarp 用と別名・別ディレクトリになる。"
+        ),
+    )
     return p
 
 
@@ -282,7 +302,7 @@ def main() -> None:
     profile_dir = base_dir / "profiles"
     profiles: dict[int, Path] = {}
     for pct in percents:
-        profiles[pct] = ensure_profile(pct, total_hr, profile_dir)
+        profiles[pct] = ensure_profile(pct, total_hr, profile_dir, selfish_timewarp=args.selfish_timewarp)
 
     if args.binary is not None:
         binary_path = args.binary
@@ -292,8 +312,23 @@ def main() -> None:
             run_cargo_build_release(project_root)
         binary_path = ensure_release_binary(SCRIPT_PATH.parent)
 
-    results_dir = args.results_dir or (base_dir / "results" / "runs")
-    output_csv = args.output or (base_dir / "results" / "required_hashrate_sweep.csv")
+    if args.results_dir is not None:
+        results_dir = args.results_dir
+    else:
+        results_dir = (
+            base_dir / "results" / "runs_selfish_timewarp"
+            if args.selfish_timewarp
+            else base_dir / "results" / "runs"
+        )
+
+    if args.output is not None:
+        output_csv = args.output
+    else:
+        output_csv = (
+            base_dir / "results" / "required_hashrate_sweep_selfish_timewarp.csv"
+            if args.selfish_timewarp
+            else base_dir / "results" / "required_hashrate_sweep.csv"
+        )
     output_csv.parent.mkdir(parents=True, exist_ok=True)
 
     def make_seed(pct: int, run_i: int) -> int:
