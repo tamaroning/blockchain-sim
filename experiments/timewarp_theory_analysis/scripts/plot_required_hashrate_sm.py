@@ -178,12 +178,68 @@ def _beta_for_t_prop_over_t_gen(*, t_prop: float, t_gen: float) -> float:
     return float("nan")
 
 
+def true_threshold_nominal_alpha(*, t_gen: float, t_prop: float) -> float:
+    """プロット上の true threshold 曲線と同じ名目 α。R = t_prop/t_gen、β = β_crit(R)。"""
+    beta = _beta_for_t_prop_over_t_gen(t_prop=t_prop, t_gen=t_gen)
+    if not np.isfinite(beta):
+        return float("nan")
+    R = t_prop / float(t_gen)
+    return float((1.0 - beta) / (1.0 + (1.0 - beta) * R))
+
+
+def intersection_timewarp_sm50_gamma05_true_threshold(
+    t_gen_grid,
+    *,
+    t_prop: float,
+    alphas_dp,
+    probs_dp,
+    n_refine: int = 96,
+):
+    """
+    50% success（timewarp+SM, γ=0.5）曲線と true threshold の交点 (t_gen, x, y)。
+    見つからなければ None。
+    """
+
+    def gap(tg: float) -> float:
+        a50 = nominal_alpha_for_target_prob(0.5, tg, 0.5, t_prop, alphas_dp, probs_dp)
+        ath = true_threshold_nominal_alpha(t_gen=tg, t_prop=t_prop)
+        if not (np.isfinite(a50) and np.isfinite(ath)):
+            return float("nan")
+        return float(a50 - ath)
+
+    gaps = np.array([gap(float(tg)) for tg in t_gen_grid])
+    for i in range(len(t_gen_grid) - 1):
+        g0, g1 = gaps[i], gaps[i + 1]
+        if not (np.isfinite(g0) and np.isfinite(g1)):
+            continue
+        if g0 == 0.0:
+            tg = float(t_gen_grid[i])
+            y = float(nominal_alpha_for_target_prob(0.5, tg, 0.5, t_prop, alphas_dp, probs_dp))
+            return (tg, tg / t_prop, y)
+        if g0 * g1 < 0.0:
+            lo, hi = float(t_gen_grid[i]), float(t_gen_grid[i + 1])
+            glo, ghi = g0, g1
+            for _ in range(n_refine):
+                mid = 0.5 * (lo + hi)
+                gm = gap(mid)
+                if not np.isfinite(gm):
+                    break
+                if glo * gm <= 0.0:
+                    hi, ghi = mid, gm
+                else:
+                    lo, glo = mid, gm
+            tg = 0.5 * (lo + hi)
+            y = float(nominal_alpha_for_target_prob(0.5, tg, 0.5, t_prop, alphas_dp, probs_dp))
+            return (tg, tg / t_prop, y)
+    return None
+
+
 # ==========================================
 # 2. γ = 0, 0.5, 1 の 50% 曲線 + true threshold
 # ==========================================
 def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
     T_PROP = 2.0
-    x_lim_lo = 0.01
+    x_lim_lo = 0.1
     t_gen_min = x_lim_lo * T_PROP
     t_gen_max = 600
     n_t_gen = 400
@@ -262,10 +318,49 @@ def plot_required_nominal_hashrate_curves(*, show_pow_threshold: bool = True):
             zorder=4,
             label=r"True threshold: $\alpha=\beta_{\mathrm{crit}}(\lambda\Delta)$ (Dembo et al.)",
         )
+        inter = intersection_timewarp_sm50_gamma05_true_threshold(
+            t_gen_grid,
+            t_prop=T_PROP,
+            alphas_dp=alphas_dp,
+            probs_dp=probs_dp,
+        )
+        if inter is not None:
+            _tg_i, x_i, y_i = inter
+            print(
+                "交点（50% timewarp+SM γ=0.5 と true threshold）: "
+                f"t_gen/t_prop ≈ {x_i:.6g}, α* ≈ {y_i:.6f}"
+            )
+            ax.plot(
+                [x_i],
+                [y_i],
+                linestyle="none",
+                marker="o",
+                markersize=5.5,
+                markerfacecolor="white",
+                markeredgecolor="#5b2c6f",
+                markeredgewidth=1.35,
+                clip_on=False,
+                zorder=6,
+                label=r"Intersection ($\gamma=0.5$ vs true threshold)",
+            )
+            ax.annotate(
+                rf"$(t_{{\mathrm{{gen}}}}/t_{{\mathrm{{prop}}}})^* \approx {x_i:.3g}$, $\alpha^* \approx {y_i:.3f}$",
+                xy=(x_i, y_i),
+                xytext=(12, 14),
+                textcoords="offset points",
+                fontsize=9,
+                ha="left",
+                arrowprops=dict(arrowstyle="-|>", color="#444444", lw=0.8),
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white", edgecolor="#cccccc", alpha=0.94),
+            )
+        else:
+            print(
+                "交点（50% timewarp+SM γ=0.5 と true threshold）は "
+                "t_gen グリッド上で符号変化が見つかりませんでした。"
+            )
 
     ax.set_title(
         "Required nominal hashrate for 50% attack success vs $t_{\\mathrm{gen}}/t_{\\mathrm{prop}}$ (timewarp)\n"
-        rf"$\gamma \in \{{0,\,0.5,\,1\}}$, fixed propagation delay $t_{{\mathrm{{prop}}}} = {T_PROP}$ s"
     )
     ax.set_xlabel(r"Block time ratio $t_{\mathrm{gen}}/t_{\mathrm{prop}}$")
     ax.set_ylabel("Nominal hashrate fraction α")
