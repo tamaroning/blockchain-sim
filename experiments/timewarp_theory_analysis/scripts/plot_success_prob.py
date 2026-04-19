@@ -1,68 +1,84 @@
+import argparse
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-TOTAL_EVENTS = 2016
+# 環境変数 TIMEWARP_TOTAL_EVENTS で上書き可（プレビュー用に小さくすると速い）
+TOTAL_EVENTS = int(os.environ.get("TIMEWARP_TOTAL_EVENTS", "2016"))
 
 def get_popcounts(window_size):
     return np.array([bin(i).count('1') for i in range(1 << window_size)])
 
-def survival_probability_fast(alpha, window_size):
+# 窓ごとに idx / mask は α に依存しないので再利用（毎回の巨大配列構築を省略）
+_WINDOW_STRUCT = {}
+
+def _window_struct(window_size):
+    if window_size not in _WINDOW_STRUCT:
+        num_states = 1 << window_size
+        min_a = (window_size + 1) // 2
+        popcounts = get_popcounts(window_size)
+        valid_mask = popcounts >= min_a
+        idx = np.arange(num_states, dtype=np.intp)
+        idx_a = ((idx << 1) | 1) & (num_states - 1)
+        idx_b = (idx << 1) & (num_states - 1)
+        _WINDOW_STRUCT[window_size] = (
+            num_states, min_a, popcounts, valid_mask, idx_a, idx_b,
+            valid_mask[idx_a], valid_mask[idx_b],
+        )
+    return _WINDOW_STRUCT[window_size]
+
+def survival_probability_fast(alpha, window_size, total_events=TOTAL_EVENTS):
     if alpha <= 0.0: return 0.0
     if alpha >= 1.0: return 1.0
 
-    num_states = 1 << window_size
-    min_a = (window_size + 1) // 2
-    popcounts = get_popcounts(window_size)
-    valid_mask = popcounts >= min_a
+    (num_states, _min_a, popcounts, valid_mask, idx_a, idx_b, mask_a, mask_b) = _window_struct(window_size)
 
+    # 毎ステップ np.zeros を避ける（大きい w では割り当てコストが支配的になりやすい）
     probs = np.zeros(num_states)
+    nxt = np.zeros(num_states)
     k = popcounts
-    probs = (alpha ** k) * ((1 - alpha) ** (window_size - k))
+    probs[:] = (alpha ** k) * ((1 - alpha) ** (window_size - k))
     probs[~valid_mask] = 0.0
 
     if np.sum(probs) == 0: return 0.0
 
-    idx_a = ((np.arange(num_states) << 1) | 1) & (num_states - 1)
-    idx_b = (np.arange(num_states) << 1) & (num_states - 1)
-    mask_a = valid_mask[idx_a]
-    mask_b = valid_mask[idx_b]
-
-    for _ in range(window_size, TOTAL_EVENTS):
-        new_probs = np.zeros(num_states)
-        np.add.at(new_probs, idx_a[mask_a], probs[mask_a] * alpha)
-        np.add.at(new_probs, idx_b[mask_b], probs[mask_b] * (1 - alpha))
-
-        probs = new_probs
+    for _ in range(window_size, total_events):
+        nxt.fill(0)
+        np.add.at(nxt, idx_a[mask_a], probs[mask_a] * alpha)
+        np.add.at(nxt, idx_b[mask_b], probs[mask_b] * (1 - alpha))
+        probs, nxt = nxt, probs
         current_sum = np.sum(probs)
         if current_sum < 1e-12: return 0.0 # リニアスケールなので閾値を少し緩和
 
     return np.sum(probs)
 
-def adaptive_sample(f, x0, x1, y0, y1, tol=0.003, depth=0):
+def adaptive_sample(f, x0, x1, y0, y1, tol=0.1, max_depth=5, depth=0):
     mid_x = (x0 + x1) / 2
     mid_y = f(mid_x)
     # 線形補間とのズレがtol未満なら分割終了
-    if depth > 5 or abs(mid_y - (y0 + y1) / 2) < tol:
+    # 元実装は depth > 5 で打ち切り（depth==6 で終了）
+    if depth > max_depth or abs(mid_y - (y0 + y1) / 2) < tol:
         return [(mid_x, mid_y)]
-    return (adaptive_sample(f, x0, mid_x, y0, mid_y, tol, depth + 1) +
+    return (adaptive_sample(f, x0, mid_x, y0, mid_y, tol, max_depth, depth + 1) +
             [(mid_x, mid_y)] +
-            adaptive_sample(f, mid_x, x1, mid_y, y1, tol, depth + 1))
+            adaptive_sample(f, mid_x, x1, mid_y, y1, tol, max_depth, depth + 1))
 
-def run_simulation():
-    windows = [13, 11, 9, 7, 5]
+def run_simulation(total_events=TOTAL_EVENTS, sample_tol=0.1, sample_max_depth=5, windows=None):
+    if windows is None:
+        windows = [21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1]
     plt.figure(figsize=(12, 7))
 
     for w in windows:
         print(f"Processing WINDOW={w}...")
-        f = lambda a: survival_probability_fast(a, w)
+        f = lambda a, ww=w: survival_probability_fast(a, ww, total_events=total_events)
 
         # アルファ 0.5〜1.0 の範囲を調査
         xs_base = [0.5, 1.0]
         ys_base = [f(0.5), 1.0]
 
         samples = [(xs_base[0], ys_base[0])] + \
-                  adaptive_sample(f, xs_base[0], xs_base[1], ys_base[0], ys_base[1]) + \
+                  adaptive_sample(f, xs_base[0], xs_base[1], ys_base[0], ys_base[1], tol=sample_tol, max_depth=sample_max_depth) + \
                   [(xs_base[1], ys_base[1])]
 
         samples.sort()
@@ -86,4 +102,38 @@ def run_simulation():
     plt.close()
 
 if __name__ == "__main__":
-    run_simulation()
+    p = argparse.ArgumentParser(description="Plot attack success probability vs hashrate.")
+    p.add_argument(
+        "--total-events",
+        type=int,
+        default=TOTAL_EVENTS,
+        help="Markov ステップ数（既定: %(default)s。プレビューは 256 などにすると大幅に速い）",
+    )
+    p.add_argument(
+        "--sample-tol",
+        type=float,
+        default=0.1,
+        help="adaptive_sample の許容誤差（大きいほど点が少なく速い）",
+    )
+    p.add_argument(
+        "--sample-max-depth",
+        type=int,
+        default=5,
+        help="adaptive_sample の再帰の深さ上限（小さいほど速い）",
+    )
+    p.add_argument(
+        "--windows",
+        type=str,
+        default="",
+        help="カンマ区切り（例: 11,9,7）。空なら全窓",
+    )
+    args = p.parse_args()
+    win_list = None
+    if args.windows.strip():
+        win_list = [int(x.strip()) for x in args.windows.split(",") if x.strip()]
+    run_simulation(
+        total_events=args.total_events,
+        sample_tol=args.sample_tol,
+        sample_max_depth=args.sample_max_depth,
+        windows=win_list,
+    )
