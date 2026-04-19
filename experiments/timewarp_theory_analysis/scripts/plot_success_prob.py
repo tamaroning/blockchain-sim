@@ -1,11 +1,17 @@
 import argparse
 import os
-import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+from numba import njit
 
 # 環境変数 TIMEWARP_TOTAL_EVENTS で上書き可（プレビュー用に小さくすると速い）
 TOTAL_EVENTS = int(os.environ.get("TIMEWARP_TOTAL_EVENTS", "2016"))
+
+# adaptive_sample 用。大きいと区間が線形に見えるほど再帰が止まり点が極端に少なくなる
+# （例: tol=0.1 かつ Window=11 だと点が 5 個程度になり折れ線が直線に見える）。Numba とは無関係。
+DEFAULT_SAMPLE_TOL = 0.03
 
 def get_popcounts(window_size):
     return np.array([bin(i).count('1') for i in range(1 << window_size)])
@@ -22,38 +28,92 @@ def _window_struct(window_size):
         idx = np.arange(num_states, dtype=np.intp)
         idx_a = ((idx << 1) | 1) & (num_states - 1)
         idx_b = (idx << 1) & (num_states - 1)
+        mask_a = valid_mask[idx_a]
+        mask_b = valid_mask[idx_b]
         _WINDOW_STRUCT[window_size] = (
-            num_states, min_a, popcounts, valid_mask, idx_a, idx_b,
-            valid_mask[idx_a], valid_mask[idx_b],
+            num_states,
+            popcounts,
+            valid_mask,
+            np.ascontiguousarray(idx_a, dtype=np.int64),
+            np.ascontiguousarray(idx_b, dtype=np.int64),
+            np.ascontiguousarray(mask_a),
+            np.ascontiguousarray(mask_b),
         )
     return _WINDOW_STRUCT[window_size]
+
+
+# cache=False: スクリプトを直接実行すると __main__ / <dynamic> 名でキャッシュが保存され、
+# 読み込み時に ModuleNotFoundError: No module named '<dynamic>' になることがある。
+@njit(cache=False)
+def _survival_probability_numba(
+    probs,
+    nxt,
+    idx_a,
+    idx_b,
+    mask_a,
+    mask_b,
+    window_size,
+    total_events,
+    alpha,
+):
+    num_states = probs.shape[0]
+    oma = 1.0 - alpha
+    for _ in range(window_size, total_events):
+        nxt.fill(0.0)
+        for s in range(num_states):
+            if mask_a[s]:
+                nxt[idx_a[s]] += probs[s] * alpha
+            if mask_b[s]:
+                nxt[idx_b[s]] += probs[s] * oma
+        probs, nxt = nxt, probs
+        sm = 0.0
+        for s in range(num_states):
+            sm += probs[s]
+        if sm < 1e-12:
+            return 0.0
+    sm = 0.0
+    for s in range(num_states):
+        sm += probs[s]
+    return sm
+
 
 def survival_probability_fast(alpha, window_size, total_events=TOTAL_EVENTS):
     if alpha <= 0.0: return 0.0
     if alpha >= 1.0: return 1.0
 
-    (num_states, _min_a, popcounts, valid_mask, idx_a, idx_b, mask_a, mask_b) = _window_struct(window_size)
+    (
+        num_states,
+        popcounts,
+        valid_mask,
+        idx_a_nb,
+        idx_b_nb,
+        mask_a_nb,
+        mask_b_nb,
+    ) = _window_struct(window_size)
 
-    # 毎ステップ np.zeros を避ける（大きい w では割り当てコストが支配的になりやすい）
-    probs = np.zeros(num_states)
-    nxt = np.zeros(num_states)
+    probs = np.zeros(num_states, dtype=np.float64)
+    nxt = np.zeros(num_states, dtype=np.float64)
     k = popcounts
     probs[:] = (alpha ** k) * ((1 - alpha) ** (window_size - k))
     probs[~valid_mask] = 0.0
 
     if np.sum(probs) == 0: return 0.0
 
-    for _ in range(window_size, total_events):
-        nxt.fill(0)
-        np.add.at(nxt, idx_a[mask_a], probs[mask_a] * alpha)
-        np.add.at(nxt, idx_b[mask_b], probs[mask_b] * (1 - alpha))
-        probs, nxt = nxt, probs
-        current_sum = np.sum(probs)
-        if current_sum < 1e-12: return 0.0 # リニアスケールなので閾値を少し緩和
+    return float(
+        _survival_probability_numba(
+            probs,
+            nxt,
+            idx_a_nb,
+            idx_b_nb,
+            mask_a_nb,
+            mask_b_nb,
+            window_size,
+            total_events,
+            alpha,
+        )
+    )
 
-    return np.sum(probs)
-
-def adaptive_sample(f, x0, x1, y0, y1, tol=0.1, max_depth=5, depth=0):
+def adaptive_sample(f, x0, x1, y0, y1, tol=0.03, max_depth=5, depth=0):
     mid_x = (x0 + x1) / 2
     mid_y = f(mid_x)
     # 線形補間とのズレがtol未満なら分割終了
@@ -64,9 +124,14 @@ def adaptive_sample(f, x0, x1, y0, y1, tol=0.1, max_depth=5, depth=0):
             [(mid_x, mid_y)] +
             adaptive_sample(f, mid_x, x1, mid_y, y1, tol, max_depth, depth + 1))
 
-def run_simulation(total_events=TOTAL_EVENTS, sample_tol=0.1, sample_max_depth=5, windows=None):
+def run_simulation(
+    total_events=TOTAL_EVENTS,
+    sample_tol=DEFAULT_SAMPLE_TOL,
+    sample_max_depth=5,
+    windows=None,
+):
     if windows is None:
-        windows = [21, 19, 17, 15, 13, 11, 9, 7, 5, 3, 1]
+        windows = [17, 15, 13, 11, 9, 7, 5, 3, 1]
     plt.figure(figsize=(12, 7))
 
     for w in windows:
@@ -112,8 +177,8 @@ if __name__ == "__main__":
     p.add_argument(
         "--sample-tol",
         type=float,
-        default=0.1,
-        help="adaptive_sample の許容誤差（大きいほど点が少なく速い）",
+        default=DEFAULT_SAMPLE_TOL,
+        help="adaptive_sample の許容誤差（大きいほど点が少なく速い。直線っぽく見えたら下げる）",
     )
     p.add_argument(
         "--sample-max-depth",
