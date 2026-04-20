@@ -20,7 +20,7 @@ DEFAULT_N_ALPHA = 4097
 DEFAULT_GAMMA = 0.5
 
 DEFAULT_WINDOWS_HONEST = [17, 15, 13, 11, 9, 7, 5, 3, 1]
-DEFAULT_WINDOWS_SELFISH = [15, 11, 7, 3]
+DEFAULT_WINDOWS_SELFISH = [15, 11, 7, 3, 1]
 
 
 def get_effective_alpha(alpha, gamma=0.5):
@@ -49,7 +49,7 @@ def get_popcounts(window_size):
 
 
 def single_capture_probability(alpha, window_size):
-    """窓が i.i.d. Bernoulli(alpha) のとき、単一時点で多数派捕獲とみなされる確率。
+    """窓が i.i.d. Bernoulli(alpha) のとき、単一時点で過半数を占める確率（例: W=11 なら k>=6）。
 
     alpha はスカラーまたは numpy 配列（ブロードキャスト可）。
     """

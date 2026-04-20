@@ -397,7 +397,12 @@ def plot_difficulty(
     ax.set_title("Difficulty over block height")
     if ax2 is not None:
         ax2.set_ylabel("Mining time [min] (1000-block avg)")
-        ax2.set_ylim(0, 50)  # 右軸を0〜50に固定
+        if log_y:
+            ax2.set_yscale("log")
+            # 対数軸では 0 は取れないため正の下限にする（上限は従来どおり）
+            ax2.set_ylim(bottom=1e-6, top=50)
+        else:
+            ax2.set_ylim(0, 50)  # 右軸を0〜50に固定
     if log_y:
         ax.set_yscale("log")
     ax.grid(True, alpha=0.3)
