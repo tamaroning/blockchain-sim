@@ -14,9 +14,9 @@ DEFAULT_NETWORK_DELAY_MS = 600
 DEFAULT_SCENARIO_FILES = [
     "honest.csv",
     "selfish_timewarp.csv",
-    "timewarp85.csv",
-    "timewarp90.csv",
-    "timewarp100.csv",
+    "rev_timewarp85.csv",
+    "rev_timewarp90.csv",
+    "rev_timewarp100.csv",
 ]
 
 
@@ -25,7 +25,7 @@ def parse_inputs(
 ) -> List[Tuple[str, Path]]:
     """
     raw_inputs expects items like "label=/abs/path.csv" or "label=relative/path.csv".
-    If none are provided, fall back to the default datasets (honest, selfish-timewarp, timewarp sweeps).
+    If none are provided, fall back to the default datasets (honest, selfish-timewarp, rev_timewarp sweeps).
     """
     if not raw_inputs:
         results_dir = base_dir / "results"
@@ -55,7 +55,7 @@ def _label_from_profile(profile_path: Path, fallback_label: str) -> str:
     profile JSON から「攻撃戦略(type!=honest)のハッシュレート比率」を凡例ラベルとして組み立てる。
     例:
       - selfish_timewarp.json (49/51) -> selfish-timewarp-49%
-      - timewarp90.json (90/10)       -> timewarp-90%
+      - rev_timewarp90.json (90/10)   -> rev-timewarp-90%
       - honest.json (all honest)      -> honest-100%
     """
     if not profile_path.exists():

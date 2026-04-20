@@ -1,0 +1,16 @@
+{
+  "nodes": [
+    {
+      "hashrate": 600000000000,
+      "strategy": {
+        "type": "rev_timewarp"
+      }
+    },
+    {
+      "hashrate": 400000000000,
+      "strategy": {
+        "type": "honest"
+      }
+    }
+  ]
+}

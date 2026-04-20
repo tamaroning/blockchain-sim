@@ -33,21 +33,29 @@ def _percent_hashrate(percent: int) -> int:
     return (TOTAL_HASHRATE * percent) // 100
 
 
-def _timewarp_profile(attacker_hashrate: int) -> dict:
+def _attacker_ratio_profile(attacker_hashrate: int, strategy_type: str) -> dict:
     if attacker_hashrate == 100:
         return {
             "nodes": [
-                {"hashrate": TOTAL_HASHRATE, "strategy": {"type": "timewarp"}},
+                {"hashrate": TOTAL_HASHRATE, "strategy": {"type": strategy_type}},
             ]
         }
     attacker = _percent_hashrate(attacker_hashrate)
     honest = TOTAL_HASHRATE - attacker
     return {
         "nodes": [
-            {"hashrate": attacker, "strategy": {"type": "timewarp"}},
+            {"hashrate": attacker, "strategy": {"type": strategy_type}},
             {"hashrate": honest, "strategy": {"type": "honest"}},
         ]
     }
+
+
+def _timewarp_profile(attacker_hashrate: int) -> dict:
+    return _attacker_ratio_profile(attacker_hashrate, "timewarp")
+
+
+def _rev_timewarp_profile(attacker_hashrate: int) -> dict:
+    return _attacker_ratio_profile(attacker_hashrate, "rev_timewarp")
 
 
 def generate_all() -> list[Path]:
@@ -89,6 +97,12 @@ def generate_all() -> list[Path]:
             write_profile_json(
                 _timewarp_profile(attacker),
                 PROFILES_DIR / f"timewarp{stem}.json",
+            )
+        )
+        written.append(
+            write_profile_json(
+                _rev_timewarp_profile(attacker),
+                PROFILES_DIR / f"rev_timewarp{stem}.json",
             )
         )
 

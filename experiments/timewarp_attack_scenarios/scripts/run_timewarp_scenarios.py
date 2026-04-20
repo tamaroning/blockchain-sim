@@ -94,8 +94,8 @@ def run_full(*, scenario_dir: Path, project_root: Path, end_round: int, with_plo
             _build_cargo_command(
                 project_root=project_root,
                 end_round=end_round,
-                profile=f"profiles/timewarp{tw_hash}.json",
-                output=f"results/timewarp{tw_hash}.csv",
+                profile=f"profiles/rev_timewarp{tw_hash}.json",
+                output=f"results/rev_timewarp{tw_hash}.csv",
             )
         )
     _run_commands_in_parallel(commands=commands, cwd=scenario_dir, rust_log="warn")

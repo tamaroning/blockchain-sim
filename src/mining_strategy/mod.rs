@@ -2,11 +2,13 @@ use crate::{blockchain::BlockId, node::NodeId, simulator::Env};
 use serde::{Deserialize, Serialize};
 
 mod honest;
+mod rev_timewarp;
 mod selfish;
 mod selfish_timewarp;
 mod timewarp;
 
 pub use honest::HonestMiningStrategy;
+pub use rev_timewarp::RevTimewarpStrategy;
 pub use selfish::SelfishMiningStrategy;
 pub use selfish_timewarp::SelfishTimewarpStrategy;
 pub use timewarp::TimewarpStrategy;
@@ -86,6 +88,7 @@ pub trait MiningStrategy: Send + Sync {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum MiningStrategyEnum {
     Honest,
+    RevTimewarp,
     Selfish,
     SelfishTimewarp,
     Timewarp,
@@ -95,6 +98,7 @@ impl MiningStrategyEnum {
     pub fn to_strategy(&self) -> Box<dyn MiningStrategy> {
         match self {
             MiningStrategyEnum::Honest => Box::new(HonestMiningStrategy::default()),
+            MiningStrategyEnum::RevTimewarp => Box::new(RevTimewarpStrategy::default()),
             MiningStrategyEnum::Selfish => Box::new(SelfishMiningStrategy::default()),
             MiningStrategyEnum::SelfishTimewarp => Box::new(SelfishTimewarpStrategy::default()),
             MiningStrategyEnum::Timewarp => Box::new(TimewarpStrategy::default()),
