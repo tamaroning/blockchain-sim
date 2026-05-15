@@ -285,6 +285,9 @@ impl BlockchainSimulator {
     }
 
     fn handle_block_generation(&mut self, minter: NodeId, block_id: BlockId) {
+        self.env
+            .blockchain
+            .mark_block_generation_completed(block_id);
         let new_block = self.env.blockchain.get_block(block_id).unwrap();
 
         // Run strategy callback and schedule follow-up tasks.

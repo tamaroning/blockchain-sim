@@ -41,6 +41,10 @@ struct Cli {
     /// See examples/honest.json for example.
     #[clap(long)]
     profile: Option<PathBuf>,
+
+    /// Single-row CSV: mined_blocks, main_mined_blocks, stale_blocks, stale_rate（非メインブロック比率）
+    #[clap(long)]
+    metrics: Option<PathBuf>,
 }
 
 fn main() {
@@ -118,6 +122,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             };
             csv.serialize(&record).unwrap();
         }
+    }
+
+    if let Some(path) = args.metrics.as_ref() {
+        let m = simulator.env.blockchain.chain_metrics();
+        let mut csv = csv::Writer::from_path(path).expect("Failed to create metrics CSV writer");
+        csv.serialize(&m).expect("Failed to serialize chain metrics");
+        csv.flush().ok();
     }
 
     if let Some(csv) = &mut output2 {

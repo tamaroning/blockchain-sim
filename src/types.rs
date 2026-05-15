@@ -12,6 +12,14 @@ pub struct Record {
     pub minter: NodeId,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct ChainMetrics {
+    pub mined_blocks: u64,
+    pub main_mined_blocks: u64,
+    pub stale_blocks: u64,
+    pub stale_rate: f64,
+}
+
 #[derive(Serialize)]
 pub struct NodeInfo {
     pub node_id: usize,

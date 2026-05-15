@@ -19,4 +19,4 @@ pub use node::Node;
 pub use profile::{NetworkProfile, NodeProfile};
 pub use protocol::{GenesisDifficultyMode, Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
-pub use types::Record;
+pub use types::{ChainMetrics, Record};

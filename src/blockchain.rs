@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::{
     Protocol,
     block::{Block, GENESIS_BLOCK_ID},
+    types::ChainMetrics,
 };
 use std::sync::atomic::AtomicUsize;
 
@@ -25,6 +27,8 @@ impl std::fmt::Display for BlockId {
 pub struct Blockchain {
     blocks: Vec<Block>,
     next_block_id: AtomicUsize,
+    /// `BlockGeneration` イベントまで到達したブロック（キューから捨てられた未発火分は含まない）
+    generation_completed: HashSet<BlockId>,
 }
 
 impl Blockchain {
@@ -32,6 +36,7 @@ impl Blockchain {
         let mut blockchain = Self {
             blocks: Vec::new(),
             next_block_id: AtomicUsize::new(1),
+            generation_completed: HashSet::new(),
         };
         blockchain.add_block(Block::genesis(protocol, total_hashrate));
         blockchain
@@ -41,6 +46,11 @@ impl Blockchain {
         let id = block.id();
         self.blocks.push(block);
         id
+    }
+
+    /// マイニング完了イベントが処理されたブロックのみマークする（スケジュールのみでイベントが取代されたブロックは含めない）。
+    pub fn mark_block_generation_completed(&mut self, block_id: BlockId) {
+        self.generation_completed.insert(block_id);
     }
 
     pub fn get_block(&self, id: BlockId) -> Option<&Block> {
@@ -133,5 +143,38 @@ impl Blockchain {
 
         chain.reverse(); // ジェネシスブロックから順に
         chain
+    }
+
+    /// ジェネシス以外で、実際にマイニング完了イベントが発火したブロックを「採掘済み」とみなし、
+    /// メインチェーンに乗らないものを stale と数える（未発火のプレ生成ブロックは母集団に含めない）。
+    pub fn chain_metrics(&self) -> ChainMetrics {
+        let main = self.get_main_chain();
+        let main_set: HashSet<_> = main.iter().copied().collect();
+        let mut mined_blocks: u64 = 0;
+        let mut main_mined_blocks: u64 = 0;
+        for block in self.blocks() {
+            if block.height() == 0 {
+                continue;
+            }
+            if !self.generation_completed.contains(&block.id()) {
+                continue;
+            }
+            mined_blocks += 1;
+            if main_set.contains(&block.id()) {
+                main_mined_blocks += 1;
+            }
+        }
+        let stale_blocks = mined_blocks.saturating_sub(main_mined_blocks);
+        let stale_rate = if mined_blocks > 0 {
+            stale_blocks as f64 / mined_blocks as f64
+        } else {
+            0.0
+        };
+        ChainMetrics {
+            mined_blocks,
+            main_mined_blocks,
+            stale_blocks,
+            stale_rate,
+        }
     }
 }

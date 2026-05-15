@@ -14,6 +14,8 @@ plot:
 uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --min 86 --max 89
 
 uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --min 47 --max 50 --selfish-timewarp
+
+uv run python experiments/determine_required_hashrate/scripts/run_required_hashrate_fifty_percent.py   --success-mode epoch --trials 100   --parallel 20
 ```
 
 300エポックのシミュレーションを行い、time warp攻撃により難易度が無限降下するのに必要な攻撃者のハッシュレート割合を調べる
@@ -29,11 +31,10 @@ uv run python experiments/determine_required_hashrate/scripts/plot_required_hash
 
 各ハッシュレートに対して70~100%の範囲で攻撃者のハッシュレート割合を1%ずつ変化させ、各100回のシミュレーションを行う。
 
-最終状態で$D \eq 279,396,772,384.62 / 4$ を下回っていれば、難易度が1に到達したとみなす。
-279,396,772,384.62はT_gen=T_propとなる難易度である。
+最終チェーン上でいずれかのブロックの `difficulty` が閾値 `d_th` 未満になった最初の高さまでのブロック数を記録する（スクリプトの既定は `d_th=2`。`--difficulty-threshold` で変更）。
+到達しない場合は -1 が記録される。
 
 ## Results
 
-results/以下にCSVとして、攻撃者のハッシュレート割合と、難易度が1に到達するまでのブロック数を記録したファイルが保存されている。
-難易度が1に到達しない場合は-1が記録されている。
+results/以下にCSVとして、攻撃者のハッシュレート割合と、閾値 `d_th` 未満の難易度に達するまでのブロック数を記録したファイルが保存されている（未到達なら -1）。
 
