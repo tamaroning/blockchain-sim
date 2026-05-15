@@ -6,7 +6,7 @@ timewarp / selfish_timewarp それぞれについて、λΔ (= 伝播遅延 Δ /
 
 - difficulty（既定）: メインチェーン上で difficulty < d_th のブロックが一度でも出る（--difficulty-threshold）。
 - epoch: Bitcoin 風の 2016 ブロックを 1 エポックとみなし、各 run で合格率（合格エポック数 / 評価対象エポック数）を出し、
-  複数 run のその値の中央値を --epoch-median-target（既定 0.5）と比較して二分探索する。
+  複数 run のその値の平均を --epoch-median-target（既定 0.5）と比較して二分探索する。
   difficulty モードは従来どおり「試行ごとの成否」の件数で 50% を判定する。
   epoch モードの --end-round 省略時は 2×epoch_len ブロックのみシミュレーションする（DAA により実効 λΔ が長尺で初期から乖離しやすいため）。
   長い run が必要なら --end-round を明示する。
@@ -511,7 +511,7 @@ def count_successes(
         return sum(f.result() for f in as_completed(futs))
 
 
-def median_epoch_run_success_rates(
+def mean_epoch_run_success_rates(
     *,
     attacker_percent: float,
     trials: int,
@@ -529,7 +529,7 @@ def median_epoch_run_success_rates(
     lambda_delta: float,
     epoch_params: EpochSuccessParams,
 ) -> float:
-    """各 run のエポック合格率を求め、その中央値を返す。"""
+    """各 run のエポック合格率を求め、その平均を返す。"""
     pct_i = int(round(attacker_percent * 10))
 
     def seed_for(r: int) -> int:
@@ -570,7 +570,7 @@ def median_epoch_run_success_rates(
         with ThreadPoolExecutor(max_workers=parallel) as ex:
             futs = [ex.submit(_single_epoch_rate_trial_job, j) for j in jobs]
             rates = [f.result() for f in as_completed(futs)]
-    return statistics.median(rates)
+    return statistics.mean(rates)
 
 
 def binary_search_fifty_percent(
@@ -653,18 +653,18 @@ def binary_search_fifty_percent(
             if progress:
                 if m > tgt:
                     decision = (
-                        f"median per-run epoch rate {m:.4f} > {tgt} — "
+                        f"mean per-run epoch rate {m:.4f} > {tgt} — "
                         f"try lower share (hi := {mid}%)"
                     )
                 elif m < tgt:
                     decision = (
-                        f"median per-run epoch rate {m:.4f} < {tgt} — "
+                        f"mean per-run epoch rate {m:.4f} < {tgt} — "
                         f"try higher share (lo := {mid}%)"
                     )
                 else:
-                    decision = f"median per-run epoch rate == {tgt} — done."
+                    decision = f"mean per-run epoch rate == {tgt} — done."
                 print(
-                    f"  Binary search step {iter_num}: median(run epoch rates)={m:.4f}; "
+                    f"  Binary search step {iter_num}: mean(run epoch rates)={m:.4f}; "
                     f"{decision}",
                     flush=True,
                 )
@@ -829,7 +829,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.5,
         help=(
-            "epoch モード: 各探索点で trials 本の run 合格率の中央値と比較する目標値（既定: 0.5）"
+            "epoch モード: 各探索点で trials 本の run 合格率の平均と比較する目標値（既定: 0.5）"
         ),
     )
     p.add_argument(
@@ -972,7 +972,7 @@ def main() -> None:
             cfg_extra = (
                 f", success_mode=epoch (L={args.epoch_len}, window={args.rolling_window}, "
                 f"need={args.attacker_blocks_in_window}, attacker_id={args.attacker_node_id}, "
-                f"skip_epochs={args.skip_initial_epochs}, median_target={args.epoch_median_target})"
+                f"skip_epochs={args.skip_initial_epochs}, mean_target={args.epoch_median_target})"
             )
         print(
             f"Configuration: lambda_deltas={lambda_deltas}, trials_per_probe={args.trials}, "
@@ -1006,7 +1006,7 @@ def main() -> None:
                 dline = (
                     f"d_th={thresh:.6g}"
                     if args.success_mode == SUCCESS_MODE_DIFFICULTY
-                    else f"epoch maintenance (median target={args.epoch_median_target})"
+                    else f"epoch maintenance (mean target={args.epoch_median_target})"
                 )
                 print(
                     f"[Phase {phase_num}/{total_phases}] strategy={strategy!r} "
@@ -1025,7 +1025,7 @@ def main() -> None:
                     )
                 else:
                     act = (
-                        "take median of per-run epoch success rates vs target "
+                        "take mean of per-run epoch success rates vs target "
                         f"({args.epoch_median_target})."
                     )
                 print(f"  Action: run blockchain-sim batches; {act}", flush=True)
@@ -1062,7 +1062,7 @@ def main() -> None:
                         lambda_delta=lambda_delta,
                     )
                 assert epoch_params is not None
-                return median_epoch_run_success_rates(
+                return mean_epoch_run_success_rates(
                     attacker_percent=pct,
                     trials=args.trials,
                     binary_path=binary_path,
@@ -1101,7 +1101,7 @@ def main() -> None:
                     )
                 else:
                     print(
-                        f"  Bracket lower: median(run epoch rates)={stat_lo:.4f} "
+                        f"  Bracket lower: mean(run epoch rates)={stat_lo:.4f} "
                         f"(target {args.epoch_median_target}).",
                         flush=True,
                     )
@@ -1121,7 +1121,7 @@ def main() -> None:
                     )
                 else:
                     print(
-                        f"  Bracket upper: median(run epoch rates)={stat_hi:.4f} "
+                        f"  Bracket upper: mean(run epoch rates)={stat_hi:.4f} "
                         f"(target {args.epoch_median_target}).",
                         flush=True,
                     )
@@ -1157,7 +1157,7 @@ def main() -> None:
                     if args.min_pct is not None:
                         hint = "--min-pct"
                     raise RuntimeError(
-                        f"{strategy} λΔ={lambda_delta}: 下限 {lo_p}% で合格率の中央値が "
+                        f"{strategy} λΔ={lambda_delta}: 下限 {lo_p}% で合格率の平均が "
                         f"既に ≥ {tgt}。{hint} を下げるか区間を見直してください。"
                     )
                 if m_hi <= tgt:
@@ -1167,7 +1167,7 @@ def main() -> None:
                     if args.max_pct is not None:
                         hint = "--max-pct"
                     raise RuntimeError(
-                        f"{strategy} λΔ={lambda_delta}: 上限 {hi_p}% で合格率の中央値が "
+                        f"{strategy} λΔ={lambda_delta}: 上限 {hi_p}% で合格率の平均が "
                         f"まだ ≤ {tgt}。{hint} を上げるか区間を見直してください。"
                     )
 
