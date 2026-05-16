@@ -1,5 +1,7 @@
-use crate::{blockchain::BlockId, node::NodeId, simulator::Env};
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
+
+use crate::{blockchain::BlockId, node::NodeId, simulator::Env};
 
 mod honest;
 mod selfish;
@@ -11,24 +13,24 @@ pub use selfish::SelfishMiningStrategy;
 pub use selfish_timewarp::SelfishTimewarpStrategy;
 pub use timewarp::TimewarpStrategy;
 
-fn cumulative_chain_weight(env: &Env, tip_id: BlockId) -> f64 {
+fn cumulative_chain_work(env: &Env, tip_id: BlockId) -> U256 {
     env.blockchain
         .get_block(tip_id)
-        .map(|block| block.cumulative_chain_weight())
-        .unwrap_or(0.0)
+        .map(|block| block.cumulative_chain_work())
+        .unwrap_or(U256::zero())
 }
 
 pub(crate) fn longest_chain(env: &Env, block1_id: BlockId, block2_id: BlockId) -> BlockId {
-    let weight1 = cumulative_chain_weight(env, block1_id);
-    let weight2 = cumulative_chain_weight(env, block2_id);
-    if weight1 > weight2 {
-        block1_id
-    } else if weight2 > weight1 {
-        block2_id
-    } else {
-        // Tie-break: keep current head.
-        // `longest_chain(current_head, incoming_head)` call sites preserve first-seen behavior.
-        block1_id
+    let weight1 = cumulative_chain_work(env, block1_id);
+    let weight2 = cumulative_chain_work(env, block2_id);
+    match weight1.cmp(&weight2) {
+        std::cmp::Ordering::Greater => block1_id,
+        std::cmp::Ordering::Less => block2_id,
+        std::cmp::Ordering::Equal => {
+            // Tie-break: keep current head.
+            // `longest_chain(current_head, incoming_head)` call sites preserve first-seen behavior.
+            block1_id
+        }
     }
 }
 
@@ -52,7 +54,7 @@ pub trait MiningStrategy: Send + Sync {
     fn on_mining_block(
         &mut self,
         _block_id: BlockId,
-        _current_time: i64,
+        _current_time_us: i64,
         _env: &Env,
         _node_id: NodeId,
     ) -> Vec<Action> {
@@ -64,7 +66,7 @@ pub trait MiningStrategy: Send + Sync {
     fn on_receiving_block(
         &mut self,
         _block_id: BlockId,
-        _current_time: i64,
+        _current_time_us: i64,
         _env: &Env,
         _node_id: NodeId,
     ) -> Vec<Action> {

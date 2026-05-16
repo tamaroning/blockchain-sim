@@ -1,4 +1,5 @@
 use crate::{block::Block, simulator::Env};
+use primitive_types::U256;
 use rand::rngs::StdRng;
 use rand_distr::{Distribution, Exp};
 
@@ -49,22 +50,30 @@ impl BitcoinDifficulty {
         mantissa * 2f64.powi(8 * (exponent - 3))
     }
 
+    #[allow(dead_code)]
     pub fn target(self) -> f64 {
         // Bitcoin: difficulty = target_max / target
         Self::target_max() / self.value
     }
 
-    pub fn work(self) -> f64 {
-        // Chainwork per block: floor(2^256 / (target + 1)).
-        // floor is unnecessary for comparison because we only compare relative weights.
-        2f64.powi(256) / (self.target() + 1.0)
+    /// 採掘モデルと整合する整数 chainwork 増分（期待ハッシュ数 `D·2^32` を `U256` に載せる）。
+    pub fn chain_work_increment(self) -> U256 {
+        let eh = (self.value * 2f64.powi(32)).max(1.0);
+        if eh >= u128::MAX as f64 {
+            U256::from(u128::MAX)
+        } else {
+            U256::from(eh as u128)
+        }
     }
 
+    /// 次の採掘までの待ち時間（**マイクロ秒**）。
     pub fn calculate_mining_time(self, rng: &mut StdRng, hashrate: i64) -> i64 {
         let exp_dist: Exp<f64> = Exp::new(1.0).unwrap();
         let expected_hashes = self.value * 2f64.powi(32);
-        let expected_generation_time = expected_hashes / hashrate as f64;
-        (exp_dist.sample(rng) * expected_generation_time) as i64
+        let expected_generation_time_ms = expected_hashes / hashrate as f64;
+        let dt_ms = exp_dist.sample(rng) * expected_generation_time_ms;
+        let dt_us = (dt_ms * 1000.0).round() as i64;
+        dt_us.max(1)
     }
 }
 

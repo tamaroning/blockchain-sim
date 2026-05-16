@@ -15,7 +15,7 @@ struct Cli {
     #[clap(short, long)]
     seed: Option<u64>,
 
-    /// The maximum round (block height) to simulate.
+    /// シミュレーションを続ける目標のメインチェーン高さ（完成済み・告知済みブロックのみ）。
     #[clap(long, default_value = "10")]
     end_round: i64,
 
@@ -138,29 +138,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|node| node.hashrate())
             .sum::<i64>();
-        let total_blocks = simulator.env.blockchain.len();
+
+        let main_chain: Vec<_> = simulator.env.blockchain.get_main_chain();
 
         let mut node_rewards = HashMap::<NodeId, usize>::new();
-        simulator
-            .env
-            .blockchain
-            .get_main_chain()
-            .iter()
-            .for_each(|block_id| {
-                let Some(block) = simulator.env.blockchain.get_block(*block_id) else {
-                    unreachable!();
-                };
-                let minter = block.minter();
-                if minter != NodeId::dummy() {
-                    let node_id = minter;
-                    *node_rewards.entry(node_id).or_insert(0) += 1;
-                }
-            });
+        main_chain.iter().for_each(|block_id| {
+            let Some(block) = simulator.env.blockchain.get_block(*block_id) else {
+                unreachable!();
+            };
+            let minter = block.minter();
+            if minter != NodeId::dummy() {
+                let node_id = minter;
+                *node_rewards.entry(node_id).or_insert(0) += 1;
+            }
+        });
+
+        let total_reward: usize = node_rewards.values().sum();
 
         for node in simulator.nodes.nodes() {
-            let reward_share = node_rewards[&node.id] as f64 / total_blocks as f64;
-            let hashrate_share = node.hashrate as f64 / total_hashrate as f64;
-            let fairness = reward_share / hashrate_share;
+            let reward = *node_rewards.get(&node.id).unwrap_or(&0);
+            let reward_share = if total_reward > 0 {
+                reward as f64 / total_reward as f64
+            } else {
+                0.0
+            };
+            let hashrate_share = if total_hashrate > 0 {
+                node.hashrate as f64 / total_hashrate as f64
+            } else {
+                0.0
+            };
+            let fairness = if hashrate_share > 0.0 {
+                reward_share / hashrate_share
+            } else {
+                0.0
+            };
 
             let record = blockchain_sim::types::NodeInfo {
                 node_id: node.id.into_usize(),

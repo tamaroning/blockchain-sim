@@ -61,18 +61,17 @@ impl EthereumDifficulty {
         }
     }
 
-    pub fn work(self) -> f64 {
-        // PoW chainwork increment: floor(2^256 / (target + 1)).
-        // Ethereum's total-difficulty based fork-choice is effectively this sum.
-        2f64.powi(256) / (self.target() + 1.0)
+    pub fn chain_work_increment(self) -> U256 {
+        self.value
     }
 
+    /// 次の採掘までの待ち時間（**マイクロ秒**）。
     pub fn calculate_mining_time(self, rng: &mut StdRng, hashrate: i64) -> i64 {
         let exp_dist: Exp<f64> = Exp::new(1.0).unwrap();
-        // Mining time model uses a floating approximation at the boundary.
-        let expected_hashes = self.as_f64();
-        let expected_generation_time = expected_hashes / hashrate as f64;
-        (exp_dist.sample(rng) * expected_generation_time) as i64
+        let expected_generation_time_ms = self.as_f64() / hashrate as f64;
+        let dt_ms = exp_dist.sample(rng) * expected_generation_time_ms;
+        let dt_us = (dt_ms * 1000.0).round() as i64;
+        dt_us.max(1)
     }
 }
 

@@ -31,7 +31,7 @@ uv run python experiments/determine_required_hashrate/scripts/run_required_hashr
 
 各ハッシュレートに対して70~100%の範囲で攻撃者のハッシュレート割合を1%ずつ変化させ、各100回のシミュレーションを行う。
 
-最終チェーン上でいずれかのブロックの `difficulty` が閾値 `d_th` 未満になった最初の高さまでのブロック数を記録する（スクリプトの既定は `d_th=2`。`--difficulty-threshold` で変更）。
+最終チェーン上でいずれかのブロックの `difficulty` が閾値 `d_th` 未満になった最初の高さまでのブロック数を記録する（`run_required_hashrate_fifty_percent.py` の difficulty モード既定は `d_th=1024`。`--difficulty-threshold` で変更。ジェネシスは `round > 0` のみ評価）。
 到達しない場合は -1 が記録される。
 
 ## Results

@@ -1,3 +1,5 @@
+use primitive_types::U256;
+
 use crate::{Protocol, blockchain::BlockId, node::NodeId, protocol::Difficulty};
 
 pub const GENESIS_BLOCK_ID: BlockId = BlockId::new(0);
@@ -8,17 +10,19 @@ pub struct Block {
     height: i64,
     prev_block_id: Option<BlockId>,
     minter: NodeId,
-    /// timestamp
+    /// timestamp（プロトコル上の壁時計、**ミリ秒**）
     time: i64,
     /// Random number for block selection
     rand: i64,
     id: BlockId,
     /// Difficulty
     difficulty: Difficulty,
-    /// Cumulative chain weight from genesis to this block.
-    cumulative_chain_weight: f64,
-    /// マイニングにかかった時間
-    pub mining_time: i64,
+    /// ジェネシスからこのブロックまでの累積 chainwork（整数）
+    cumulative_chain_work: U256,
+    /// マイニングにかかった時間（**ミリ秒**、CSV 用に実時間に近い分解能）
+    pub mining_time: f64,
+    /// 少なくとも一度でもネットワーク上へ伝搬がスケジュールされたか（主鎖・指標用）
+    announced: bool,
 }
 
 impl Block {
@@ -30,8 +34,9 @@ impl Block {
         rand: i64,
         id: BlockId,
         difficulty: Difficulty,
-        cumulative_chain_weight: f64,
-        mining_time: i64,
+        cumulative_chain_work: U256,
+        mining_time_ms: f64,
+        announced: bool,
     ) -> Self {
         Self {
             height,
@@ -41,8 +46,9 @@ impl Block {
             rand,
             id,
             difficulty,
-            cumulative_chain_weight,
-            mining_time,
+            cumulative_chain_work,
+            mining_time: mining_time_ms,
+            announced,
         }
     }
 
@@ -56,8 +62,9 @@ impl Block {
             rand: 0,
             id: GENESIS_BLOCK_ID,
             difficulty,
-            cumulative_chain_weight: difficulty.chain_weight(),
-            mining_time: 0,
+            cumulative_chain_work: difficulty.chain_work_increment(),
+            mining_time: 0.0,
+            announced: true,
         }
     }
 
@@ -89,7 +96,15 @@ impl Block {
         self.rand
     }
 
-    pub fn cumulative_chain_weight(&self) -> f64 {
-        self.cumulative_chain_weight
+    pub fn cumulative_chain_work(&self) -> U256 {
+        self.cumulative_chain_work
+    }
+
+    pub fn is_announced(&self) -> bool {
+        self.announced
+    }
+
+    pub fn set_announced(&mut self, announced: bool) {
+        self.announced = announced;
     }
 }

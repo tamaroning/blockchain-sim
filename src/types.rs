@@ -7,8 +7,8 @@ pub struct Record {
     pub round: u32,
     pub timestamp: i64,
     pub difficulty: f64,
-    /// 実際のブロック生成時間
-    pub mining_time: i64,
+    /// 実際のブロック生成時間（ミリ秒、内部は μs から換算）
+    pub mining_time: f64,
     pub minter: NodeId,
 }
 

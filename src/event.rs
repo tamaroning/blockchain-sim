@@ -1,8 +1,7 @@
-use std::cmp::Ordering;
-
 use crate::{blockchain::BlockId, node::NodeId};
 
-#[derive(Clone, Debug, Hash)]
+/// シミュレーションイベント。`time` はシミュレータ内部の **マイクロ秒** 時刻。
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Event {
     time: i64,
     ty: EventType,
@@ -42,24 +41,4 @@ pub enum EventType {
         to: NodeId,
         block_id: BlockId,
     },
-}
-
-impl Eq for Event {}
-
-impl PartialEq for Event {
-    fn eq(&self, other: &Self) -> bool {
-        self.time == other.time
-    }
-}
-
-impl Ord for Event {
-    fn cmp(&self, other: &Self) -> Ordering {
-        other.time.cmp(&self.time) // 逆順（最小ヒープにするため）
-    }
-}
-
-impl PartialOrd for Event {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
 }

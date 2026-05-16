@@ -25,7 +25,7 @@ impl MiningStrategy for HonestMiningStrategy {
     fn on_mining_block(
         &mut self,
         block_id: BlockId,
-        _current_time: i64,
+        _current_time_us: i64,
         env: &Env,
         _node_id: NodeId,
     ) -> Vec<Action> {
@@ -51,7 +51,7 @@ impl MiningStrategy for HonestMiningStrategy {
     fn on_receiving_block(
         &mut self,
         block_id: BlockId,
-        _current_time: i64,
+        _current_time_us: i64,
         env: &Env,
         _node_id: NodeId,
     ) -> Vec<Action> {

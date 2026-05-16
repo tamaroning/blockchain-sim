@@ -21,22 +21,22 @@ impl MiningStrategy for SelfishTimewarpStrategy {
     fn on_mining_block(
         &mut self,
         block_id: BlockId,
-        current_time: i64,
+        current_time_us: i64,
         env: &Env,
         node_id: NodeId,
     ) -> Vec<Action> {
-        self.0.on_mining_block(block_id, current_time, env, node_id)
+        self.0.on_mining_block(block_id, current_time_us, env, node_id)
     }
 
     fn on_receiving_block(
         &mut self,
         block_id: BlockId,
-        current_time: i64,
+        current_time_us: i64,
         env: &Env,
         node_id: NodeId,
     ) -> Vec<Action> {
         self.0
-            .on_receiving_block(block_id, current_time, env, node_id)
+            .on_receiving_block(block_id, current_time_us, env, node_id)
     }
 
     fn handle_timestamp(

@@ -12,7 +12,7 @@ timewarp / selfish_timewarp それぞれについて、λΔ (= 伝播遅延 Δ /
   長い run が必要なら --end-round を明示する。
 
 epoch モードの合格条件（エポック index e >= --skip-initial-epochs で、かつチェーンが当該エポック末端まで到達）:
-  - 当該エポックの先頭・末尾ブロック（高さ e*L+1 と (e+1)*L）の minter が攻撃者ノード
+  - 当該エポックの先頭・末尾ブロック（高さ e*L と (e+1)*L-1；Bitcoin DAA の 2016 ブロック区間と整合）の minter が攻撃者ノード
   - エポック内の中間ブロック（高さ h_first+1 .. h_last-1）について、それぞれ直前 11 ブロック
     （高さ h-1, …, h-11）のうち攻撃者生成が --attacker-blocks-in-window 本以上
 
@@ -286,6 +286,7 @@ def first_block_below_threshold(csv_path: Path, threshold: float) -> int:
     if "round" not in df.columns or "difficulty" not in df.columns:
         raise ValueError(f"{csv_path} に round / difficulty 列がありません")
     df = df.sort_values("round")
+    df = df[df["round"] > 0]
     mask = df["difficulty"] < threshold
     if not mask.any():
         return -1
@@ -318,12 +319,13 @@ def per_run_epoch_timewarp_success_rate(
     if not by_h:
         return 0.0
     max_h = max(by_h)
-    complete_epochs = max_h // p.epoch_len
+    L = p.epoch_len
+    # エポック e のブロック高さは e*L .. (e+1)*L-1（Bitcoin DAA の retarget 区間と整合）
+    complete_epochs = (max_h + 1) // L
     start_e = p.skip_initial_epochs
     if complete_epochs <= start_e:
         return 0.0
 
-    L = p.epoch_len
     w = p.rolling_window
     need = p.attacker_blocks_needed
     aid = p.attacker_node_id
@@ -331,8 +333,8 @@ def per_run_epoch_timewarp_success_rate(
     passed = 0
     total = 0
     for e in range(start_e, complete_epochs):
-        h_first = e * L + 1
-        h_last = (e + 1) * L
+        h_first = e * L
+        h_last = (e + 1) * L - 1
         total += 1
         ok = True
         if by_h.get(h_first) != aid or by_h.get(h_last) != aid:

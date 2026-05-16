@@ -1,3 +1,4 @@
+use primitive_types::U256;
 use rand::rngs::StdRng;
 
 use super::{BitcoinDifficulty, EthereumDifficulty};
@@ -9,6 +10,7 @@ pub enum Difficulty {
 }
 
 impl Difficulty {
+    /// 次の採掘イベントまでの待ち時間（**マイクロ秒**）。指数分布サンプル、最低 1μs。
     pub fn calculate_mining_time(self, rng: &mut StdRng, hashrate: i64) -> i64 {
         match self {
             Difficulty::Bitcoin(d) => d.calculate_mining_time(rng, hashrate),
@@ -25,13 +27,11 @@ impl Difficulty {
         }
     }
 
-    /// Weight used for fork-choice:
-    /// - Bitcoin: chainwork increment derived from target
-    /// - Ethereum(eth1): total difficulty increment
-    pub fn chain_weight(self) -> f64 {
+    /// フォーク選択用の整数 chainwork 増分（累積は `U256` で保持）。
+    pub fn chain_work_increment(self) -> U256 {
         match self {
-            Difficulty::Bitcoin(d) => d.work(),
-            Difficulty::Ethereum(d) => d.work(),
+            Difficulty::Bitcoin(d) => d.chain_work_increment(),
+            Difficulty::Ethereum(d) => d.chain_work_increment(),
         }
     }
 }
