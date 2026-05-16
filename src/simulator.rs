@@ -11,12 +11,15 @@ use crate::protocol::Protocol;
 use rand::prelude::*;
 use rand_distr::Exp;
 
+/// 主鎖が `end_round` に届かないまま分岐上の最大生成高さだけが伸び続ける場合の打ち切り余裕。
+const MAX_BRANCH_HEIGHT_ABOVE_END_ROUND: i64 = 4096;
+
 pub struct Env {
     // Configuration
     /// The number of nodes.
     nodes: Vec<NodeId>,
-    /// The delay time for block propagation.
-    pub delay: i64,
+    /// ブロック伝搬の遅れ（**マイクロ秒**）。CLI の `--delay` は ms のまま渡し、内部で ×1000 する。
+    pub delay_us: i64,
     /// The total hashrate of all nodes.
     pub total_hashrate: i64,
     // Current environments
@@ -25,11 +28,11 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn new(nodes: &[Node], delay: i64, protocol: &dyn Protocol) -> Self {
+    pub fn new(nodes: &[Node], delay_ms: i64, protocol: &dyn Protocol) -> Self {
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
         Self {
             nodes: nodes.iter().map(|n| n.id()).collect(),
-            delay,
+            delay_us: delay_ms.saturating_mul(1000),
             total_hashrate,
             blockchain: Blockchain::new(&*protocol, total_hashrate),
         }
@@ -46,7 +49,7 @@ pub struct BlockchainSimulator {
     event_queue: EventQueue,
     /// Maximum height of the blocks created.
     current_round: i64,
-    /// The current time of the simulation in ms.
+    /// The current time of the simulation in **microseconds**.
     current_time: i64,
     /// A list of nodes.
     pub nodes: NodeList,
@@ -136,7 +139,7 @@ impl BlockchainSimulator {
     }
 
     fn propagation_time(&self, from: NodeId, to: NodeId) -> i64 {
-        if from == to { 0 } else { self.env.delay }
+        if from == to { 0 } else { self.env.delay_us }
     }
 
     pub fn enqueue_actions(&mut self, node_id: NodeId, actions: &[Action]) {
@@ -178,21 +181,24 @@ impl BlockchainSimulator {
                         .protocol
                         .calculate_difficulty(mining_base_block, &self.env);
                     let minter_hashrate = self.nodes.get_node(minter).hashrate();
-                    let generation_time =
+                    let generation_time_us =
                         new_difficulty.calculate_mining_time(&mut self.rng, minter_hashrate);
-                    let next_mining_time = base_time + generation_time;
+                    let next_mining_time = base_time + generation_time_us;
 
                     // Create the block.
                     let node = self.nodes.get_node(minter);
                     let new_block_height = mining_base_block.height() + 1;
+                    let wall_clock_ms = next_mining_time / 1000;
                     let timestamp = node.mining_strategy().handle_timestamp(
-                        next_mining_time,
+                        wall_clock_ms,
                         prev_block_id,
                         new_block_height,
                         &self.env,
                     );
-                    let cumulative_chain_weight =
-                        mining_base_block.cumulative_chain_weight() + new_difficulty.chain_weight();
+                    let cumulative_chain_work = mining_base_block
+                        .cumulative_chain_work()
+                        .saturating_add(new_difficulty.chain_work_increment());
+                    let mining_time_ms = generation_time_us as f64 / 1000.0;
                     let new_block = Block::new(
                         new_block_height,
                         Some(prev_block_id),
@@ -201,8 +207,9 @@ impl BlockchainSimulator {
                         (self.rng.r#gen::<f64>() * (i64::MAX - 10) as f64) as i64,
                         self.env.blockchain.next_block_id(),
                         new_difficulty,
-                        cumulative_chain_weight,
-                        generation_time,
+                        cumulative_chain_work,
+                        mining_time_ms,
+                        false,
                     );
 
                     if new_difficulty != mining_base_block.difficulty() {
@@ -234,8 +241,9 @@ impl BlockchainSimulator {
                 EventType::Propagation {
                     from,
                     to,
-                    block_id: _,
+                    block_id,
                 } => {
+                    self.env.blockchain.mark_block_announced(block_id);
                     let prop_delay = self.propagation_time(from, to);
                     let event_time = base_time + prop_delay;
                     self.event_queue.push(Event::new(event_time, event_type));
@@ -248,7 +256,14 @@ impl BlockchainSimulator {
     pub fn simulation(&mut self) {
         self.enqueue_first_mining_task();
 
-        while !self.event_queue.is_empty() && self.current_round < self.end_round {
+        // 終了条件は完成済みメインチェーン高さ（`get_main_chain` 上の tip height）。
+        // 分岐だけが伸び続ける場合は `current_round` の上限で打ち切る。
+        while !self.event_queue.is_empty()
+            && self.current_round
+                < self
+                    .end_round
+                    .saturating_add(MAX_BRANCH_HEIGHT_ABOVE_END_ROUND)
+        {
             let current_event = self
                 .event_queue
                 .pop()
@@ -302,8 +317,8 @@ impl BlockchainSimulator {
         }
 
         log::trace!(
-            "📦 time: {}, minter: {}, difficulty: {:.4}, height: {}",
-            self.current_time,
+            "📦 time (ms): {}, minter: {}, difficulty: {:.4}, height: {}",
+            self.current_time / 1000,
             new_block.minter(),
             new_block.difficulty().as_f64(),
             new_block.height()
@@ -322,8 +337,8 @@ impl BlockchainSimulator {
         self.enqueue_actions(to, &actions);
 
         log::trace!(
-            "🚚 time: {}, {}->{}, height: {}",
-            self.current_time,
+            "🚚 time (ms): {}, {}->{}, height: {}",
+            self.current_time / 1000,
             from,
             to,
             self.env.blockchain.get_block(block_id).unwrap().height()
@@ -359,11 +374,14 @@ impl BlockchainSimulator {
 
     pub fn print_summary(&self) {
         log::info!("Simulation Summary:");
-        log::info!("- Current time: {}", self.current_time);
-        log::info!("- Current round: {}", self.current_round);
+        log::info!("- Current time (ms): {}", self.current_time / 1000);
+        log::info!("- End round target (main chain): {}", self.end_round);
+        log::info!("- Max generated height (any branch): {}", self.current_round);
         log::info!("- Total blocks: {}", self.env.blockchain.len());
-        let main_chain_length = self.env.blockchain.max_height();
-        log::info!("- Main chain length: {}", main_chain_length);
+        let main_h = self.env.blockchain.main_chain_height();
+        let max_h = self.env.blockchain.max_height();
+        log::info!("- Main chain height: {}", main_h);
+        log::info!("- Max block height (any branch): {}", max_h);
         // difficulty
         log::info!(
             "Difficulty: {:.4}",
@@ -373,8 +391,8 @@ impl BlockchainSimulator {
                 .map_or(0.0, |b| b.difficulty().as_f64())
         );
         log::info!(
-            "- Avg. time/block: {}",
-            self.current_time as f64 / main_chain_length as f64
+            "- Avg. time/block (ms): {}",
+            (self.current_time as f64 / 1000.0) / main_h.max(1) as f64
         );
     }
 
