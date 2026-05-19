@@ -49,6 +49,11 @@ pub trait MiningStrategy: Send + Sync {
     /// 戦略の名前を取得する
     fn name(&self) -> &'static str;
 
+    /// honest ノード（通常マイニング）かどうか
+    fn is_honest(&self) -> bool {
+        false
+    }
+
     /// ブロック生成時に呼ばれるコールバック
     /// Return: A list of actions to schedule.
     fn on_mining_block(

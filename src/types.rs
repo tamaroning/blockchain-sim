@@ -18,6 +18,11 @@ pub struct ChainMetrics {
     pub main_mined_blocks: u64,
     pub stale_blocks: u64,
     pub stale_rate: f64,
+    /// honest ノードが採掘したブロックのみを母集団とした stale 指標
+    pub honest_mined_blocks: u64,
+    pub honest_main_mined_blocks: u64,
+    pub honest_stale_blocks: u64,
+    pub honest_stale_rate: f64,
 }
 
 #[derive(Serialize)]

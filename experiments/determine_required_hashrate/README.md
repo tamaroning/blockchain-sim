@@ -1,5 +1,18 @@
 # Determining Required Attacker Hashrate by Simulation
 
+実行
+
+```bash
+uv run python experiments/determine_required_hashrate/scripts/run_required_hashrate_fifty_percent.py --trials 100 --parallel 20
+```
+
+プロット
+```bash
+uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_fifty_percent.py
+```
+
+<!--
+
 シミュレーション実行:
 ```sh
 uv run python experiments/determine_required_hashrate/scripts/run_required_hashrate_sweep.py \
@@ -14,8 +27,6 @@ plot:
 uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --min 86 --max 89
 
 uv run python experiments/determine_required_hashrate/scripts/plot_required_hashrate_sweep.py --min 47 --max 50 --selfish-timewarp
-
-uv run python experiments/determine_required_hashrate/scripts/run_required_hashrate_fifty_percent.py   --success-mode epoch --trials 100   --parallel 20
 ```
 
 300エポックのシミュレーションを行い、time warp攻撃により難易度が無限降下するのに必要な攻撃者のハッシュレート割合を調べる
@@ -38,3 +49,5 @@ uv run python experiments/determine_required_hashrate/scripts/run_required_hashr
 
 results/以下にCSVとして、攻撃者のハッシュレート割合と、閾値 `d_th` 未満の難易度に達するまでのブロック数を記録したファイルが保存されている（未到達なら -1）。
 
+
+-->

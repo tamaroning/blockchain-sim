@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use crate::{
     Protocol,
     block::{Block, GENESIS_BLOCK_ID},
+    node::NodeId,
     types::ChainMetrics,
 };
 use std::sync::atomic::AtomicUsize;
@@ -213,13 +214,30 @@ impl Blockchain {
 
     /// ジェネシス以外で、実際にマイニング完了イベントが発火したブロックを「採掘済み」とみなし、
     /// メインチェーンに乗らないものを stale と数える（未発火のプレ生成ブロックは母集団に含めない）。
-    pub fn chain_metrics(&self) -> ChainMetrics {
+    ///
+    /// `honest_minters` を渡したときは、同条件で honest ノード採掘分のみの指標も集計する。
+    /// `min_height` / `max_height` でブロック高さの包含範囲を制限できる（ジェネシスは常に除外）。
+    pub fn chain_metrics(
+        &self,
+        honest_minters: Option<&HashSet<NodeId>>,
+        min_height: Option<i64>,
+        max_height: Option<i64>,
+    ) -> ChainMetrics {
         let main = self.get_main_chain();
         let main_set: HashSet<_> = main.iter().copied().collect();
         let mut mined_blocks: u64 = 0;
         let mut main_mined_blocks: u64 = 0;
+        let mut honest_mined_blocks: u64 = 0;
+        let mut honest_main_mined_blocks: u64 = 0;
         for block in self.blocks() {
-            if block.height() == 0 {
+            let height = block.height();
+            if height == 0 {
+                continue;
+            }
+            if min_height.is_some_and(|min_h| height < min_h) {
+                continue;
+            }
+            if max_height.is_some_and(|max_h| height > max_h) {
                 continue;
             }
             if !self.generation_completed.contains(&block.id()) {
@@ -229,8 +247,15 @@ impl Blockchain {
                 continue;
             }
             mined_blocks += 1;
-            if main_set.contains(&block.id()) {
+            let on_main = main_set.contains(&block.id());
+            if on_main {
                 main_mined_blocks += 1;
+            }
+            if honest_minters.is_some_and(|set| set.contains(&block.minter())) {
+                honest_mined_blocks += 1;
+                if on_main {
+                    honest_main_mined_blocks += 1;
+                }
             }
         }
         let stale_blocks = mined_blocks.saturating_sub(main_mined_blocks);
@@ -239,11 +264,117 @@ impl Blockchain {
         } else {
             0.0
         };
+        let honest_stale_blocks = honest_mined_blocks.saturating_sub(honest_main_mined_blocks);
+        let honest_stale_rate = if honest_mined_blocks > 0 {
+            honest_stale_blocks as f64 / honest_mined_blocks as f64
+        } else {
+            0.0
+        };
         ChainMetrics {
             mined_blocks,
             main_mined_blocks,
             stale_blocks,
             stale_rate,
+            honest_mined_blocks,
+            honest_main_mined_blocks,
+            honest_stale_blocks,
+            honest_stale_rate,
         }
+    }
+}
+
+#[cfg(test)]
+mod chain_metrics_tests {
+    use super::*;
+    use crate::{
+        block::Block,
+        node::NodeId,
+        protocol::{GenesisDifficultyMode, ProtocolType},
+    };
+
+    fn test_protocol() -> Box<dyn Protocol> {
+        ProtocolType::Bitcoin.to_protocol(GenesisDifficultyMode::Fixed)
+    }
+
+    fn push_block(
+        chain: &mut Blockchain,
+        id: usize,
+        height: i64,
+        prev: BlockId,
+        minter: usize,
+        announced: bool,
+    ) -> BlockId {
+        let protocol = test_protocol();
+        let difficulty = protocol.default_difficulty(1);
+        let parent_work = chain
+            .get_block(prev)
+            .map(|b| b.cumulative_chain_work())
+            .unwrap_or(U256::zero());
+        let cumulative = parent_work + difficulty.chain_work_increment();
+        let block_id = BlockId::new(id);
+        let block = Block::new(
+            height,
+            Some(prev),
+            NodeId::new(minter),
+            height * 1000,
+            0,
+            block_id,
+            difficulty,
+            cumulative,
+            1.0,
+            announced,
+        );
+        chain.add_block(block);
+        block_id
+    }
+
+    #[test]
+    fn honest_stale_rate_counts_only_honest_announced_completed_blocks() {
+        let protocol = test_protocol();
+        let mut chain = Blockchain::new(protocol.as_ref(), 3);
+        let honest: HashSet<NodeId> = [1usize, 2].into_iter().map(NodeId::new).collect();
+
+        // main: genesis -> h1(honest) -> h2(attacker) -> h3(honest)
+        let b1 = push_block(&mut chain, 1, 1, GENESIS_BLOCK_ID, 1, true);
+        let b2 = push_block(&mut chain, 2, 2, b1, 0, true);
+        let _b3 = push_block(&mut chain, 3, 3, b2, 1, true);
+        // stale honest fork at height 2（告知済み・採掘完了）
+        let b4 = push_block(&mut chain, 4, 2, b1, 2, true);
+
+        for id in [b1, b2, b4, BlockId::new(3)] {
+            chain.mark_block_generation_completed(id);
+        }
+
+        let m = chain.chain_metrics(Some(&honest), None, None);
+        assert_eq!(m.honest_mined_blocks, 3, "honest blocks: b1, b3, b4");
+        assert_eq!(m.honest_main_mined_blocks, 2, "on main: b1, b3");
+        assert_eq!(m.honest_stale_blocks, 1, "stale honest: b4");
+        assert!(
+            (m.honest_stale_rate - (1.0 / 3.0)).abs() < 1e-12,
+            "honest_stale_rate = stale / mined"
+        );
+
+        // 攻撃者ブロックは honest 母集団に入らない
+        let m_all = chain.chain_metrics(None, None, None);
+        assert_eq!(m_all.mined_blocks, 4);
+        assert!(m.honest_mined_blocks < m_all.mined_blocks);
+    }
+
+    #[test]
+    fn honest_stale_rate_respects_height_bounds_and_announced_filter() {
+        let protocol = test_protocol();
+        let mut chain = Blockchain::new(protocol.as_ref(), 3);
+        let honest: HashSet<NodeId> = HashSet::from([NodeId::new(1)]);
+
+        let b1 = push_block(&mut chain, 1, 1, GENESIS_BLOCK_ID, 1, true);
+        let b2 = push_block(&mut chain, 2, 2, b1, 1, false); // 未告知
+        let b3 = push_block(&mut chain, 3, 5, b2, 1, true);
+        for id in [b1, b2, b3] {
+            chain.mark_block_generation_completed(id);
+        }
+
+        let m = chain.chain_metrics(Some(&honest), Some(2), Some(4));
+        assert_eq!(m.honest_mined_blocks, 0, "height 2..4 に告知済み honest ブロックなし");
+        assert_eq!(m.honest_stale_rate, 0.0);
     }
 }

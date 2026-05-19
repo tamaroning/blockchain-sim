@@ -22,6 +22,10 @@ impl MiningStrategy for HonestMiningStrategy {
         "Honest"
     }
 
+    fn is_honest(&self) -> bool {
+        true
+    }
+
     fn on_mining_block(
         &mut self,
         block_id: BlockId,

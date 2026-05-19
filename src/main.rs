@@ -3,7 +3,10 @@ use blockchain_sim::{
 };
 use clap::Parser;
 use rand::Rng;
-use std::{collections::HashMap, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 
 #[derive(Parser, Debug, Clone)]
 struct Cli {
@@ -42,9 +45,17 @@ struct Cli {
     #[clap(long)]
     profile: Option<PathBuf>,
 
-    /// Single-row CSV: mined_blocks, main_mined_blocks, stale_blocks, stale_rate（非メインブロック比率）
+    /// Single-row CSV: mined_blocks, …, stale_rate, honest_mined_blocks, …, honest_stale_rate
     #[clap(long)]
     metrics: Option<PathBuf>,
+
+    /// メトリクス集計の最小ブロック高さ（含む）。省略時は制限なし。
+    #[clap(long)]
+    metrics_min_height: Option<i64>,
+
+    /// メトリクス集計の最大ブロック高さ（含む）。省略時は制限なし。
+    #[clap(long)]
+    metrics_max_height: Option<i64>,
 }
 
 fn main() {
@@ -125,7 +136,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     if let Some(path) = args.metrics.as_ref() {
-        let m = simulator.env.blockchain.chain_metrics();
+        let honest_minters: HashSet<NodeId> = simulator
+            .nodes
+            .nodes()
+            .iter()
+            .filter(|node| node.mining_strategy().is_honest())
+            .map(|node| node.id)
+            .collect();
+        let m = simulator.env.blockchain.chain_metrics(
+            Some(&honest_minters),
+            args.metrics_min_height,
+            args.metrics_max_height,
+        );
         let mut csv = csv::Writer::from_path(path).expect("Failed to create metrics CSV writer");
         csv.serialize(&m).expect("Failed to serialize chain metrics");
         csv.flush().ok();
