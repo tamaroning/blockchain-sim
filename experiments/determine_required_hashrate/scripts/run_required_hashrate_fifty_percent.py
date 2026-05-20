@@ -663,7 +663,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--max-pct-selfish",
         type=float,
-        default=49.99,
+        default=55.00,
         help="selfish_timewarp の探索上限 [%%]（README の 47〜50%% 付近を想定しやや広め）",
     )
     p.add_argument(

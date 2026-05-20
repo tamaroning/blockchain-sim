@@ -379,8 +379,13 @@ impl BlockchainSimulator {
         log::info!("- Max generated height (any branch): {}", self.current_round);
         log::info!("- Total blocks: {}", self.env.blockchain.len());
         let main_h = self.env.blockchain.main_chain_height();
+        let main_export_h = self.env.blockchain.main_chain_height_for_export();
         let max_h = self.env.blockchain.max_height();
-        log::info!("- Main chain height: {}", main_h);
+        log::info!("- Main chain height (announced): {}", main_h);
+        log::info!(
+            "- Main chain height (export, incl. unannounced): {}",
+            main_export_h
+        );
         log::info!("- Max block height (any branch): {}", max_h);
         // difficulty
         log::info!(
@@ -399,7 +404,7 @@ impl BlockchainSimulator {
     /// Traverse the main chain, compute rewards, and print mining fairness
     /// (fairness = reward share / hashrate share).
     pub fn print_mining_fairness(&self) {
-        let main_chain = self.env.blockchain.get_main_chain();
+        let main_chain = self.env.blockchain.get_main_chain_for_export();
 
         // Count rewards per node (exclude genesis minter).
         let mut rewards: HashMap<NodeId, f64> = HashMap::new();

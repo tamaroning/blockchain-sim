@@ -122,7 +122,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     // Output mainchain blocks to CSV
     // round,difficulty,time
     if let Some(csv) = &mut output {
-        for block in simulator.env.blockchain.get_main_chain() {
+        for block in simulator.env.blockchain.get_main_chain_for_export() {
             let block = simulator.env.blockchain.get_block(block).unwrap();
             let record = blockchain_sim::types::Record {
                 round: block.height() as u32,
@@ -161,7 +161,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             .map(|node| node.hashrate())
             .sum::<i64>();
 
-        let main_chain: Vec<_> = simulator.env.blockchain.get_main_chain();
+        let main_chain: Vec<_> = simulator.env.blockchain.get_main_chain_for_export();
 
         let mut node_rewards = HashMap::<NodeId, usize>::new();
         main_chain.iter().for_each(|block_id| {

@@ -124,18 +124,27 @@ impl Blockchain {
         id == GENESIS_BLOCK_ID || self.generation_completed.contains(&id)
     }
 
-    /// 主鎖・指標では、採掘完了かつネットワークに告知済みのブロックだけを連鎖に含める。
+    /// 主鎖候補: 採掘完了済み。`include_unannounced` が false のときは告知済みのみ。
     #[inline]
-    fn is_public_main_chain_block(&self, id: BlockId) -> bool {
+    fn is_main_chain_candidate(&self, id: BlockId, include_unannounced: bool) -> bool {
         if id == GENESIS_BLOCK_ID {
             return true;
         }
-        self.get_block(id)
-            .is_some_and(|b| b.is_announced()) && self.is_effective_chain_block(id)
+        if !self.is_effective_chain_block(id) {
+            return false;
+        }
+        if include_unannounced {
+            return true;
+        }
+        self.get_block(id).is_some_and(|b| b.is_announced())
     }
 
     /// tip から prev を辿り、ジェネシスまでの経路に未完了ブロックが無ければそのチェーンを返す。
-    fn chain_from_tip_if_fully_effective(&self, tip: BlockId) -> Option<Vec<BlockId>> {
+    fn chain_from_tip_if_fully_effective(
+        &self,
+        tip: BlockId,
+        include_unannounced: bool,
+    ) -> Option<Vec<BlockId>> {
         let mut rev = Vec::new();
         let mut cur = tip;
         loop {
@@ -143,7 +152,7 @@ impl Blockchain {
                 rev.push(cur);
                 break;
             }
-            if !self.is_public_main_chain_block(cur) {
+            if !self.is_main_chain_candidate(cur, include_unannounced) {
                 return None;
             }
             rev.push(cur);
@@ -153,9 +162,7 @@ impl Blockchain {
         Some(rev)
     }
 
-    /// メインチェーンを取得する（採掘完了済みブロックのみを連鎖し、最重の有効先端を採用）
-    /// Return: A list of block IDs. (oldest to newest)
-    pub fn get_main_chain(&self) -> Vec<BlockId> {
+    fn compute_main_chain(&self, include_unannounced: bool) -> Vec<BlockId> {
         if self.blocks.is_empty() {
             return vec![GENESIS_BLOCK_ID];
         }
@@ -163,7 +170,7 @@ impl Blockchain {
         let mut best_weight = self.cumulative_chain_work(GENESIS_BLOCK_ID);
         let mut best_tips: Vec<BlockId> = vec![GENESIS_BLOCK_ID];
         for block in &self.blocks {
-            if !self.is_public_main_chain_block(block.id()) {
+            if !self.is_main_chain_candidate(block.id(), include_unannounced) {
                 continue;
             }
             let w = self.cumulative_chain_work(block.id());
@@ -178,7 +185,7 @@ impl Blockchain {
         }
 
         for &tip in &best_tips {
-            if let Some(ch) = self.chain_from_tip_if_fully_effective(tip) {
+            if let Some(ch) = self.chain_from_tip_if_fully_effective(tip, include_unannounced) {
                 return ch;
             }
         }
@@ -187,7 +194,7 @@ impl Blockchain {
         let mut tips: Vec<(U256, BlockId)> = self
             .blocks
             .iter()
-            .filter(|b| self.is_public_main_chain_block(b.id()))
+            .filter(|b| self.is_main_chain_candidate(b.id(), include_unannounced))
             .map(|b| (self.cumulative_chain_work(b.id()), b.id()))
             .collect();
         tips.sort_by(|a, b| b.0.cmp(&a.0));
@@ -195,7 +202,7 @@ impl Blockchain {
             if best_tips.contains(&tip) {
                 continue;
             }
-            if let Some(ch) = self.chain_from_tip_if_fully_effective(tip) {
+            if let Some(ch) = self.chain_from_tip_if_fully_effective(tip, include_unannounced) {
                 return ch;
             }
         }
@@ -203,9 +210,28 @@ impl Blockchain {
         vec![GENESIS_BLOCK_ID]
     }
 
+    /// メインチェーン（告知済み・採掘完了ブロックのみ）。シミュレーション中のネットワーク上の最重鎖。
+    pub fn get_main_chain(&self) -> Vec<BlockId> {
+        self.compute_main_chain(false)
+    }
+
+    /// シミュレーション終了後の CSV 等用。採掘完了済みなら未告知（私有）も含めた最重鎖。
+    pub fn get_main_chain_for_export(&self) -> Vec<BlockId> {
+        self.compute_main_chain(true)
+    }
+
     /// 採掘完了済みメインチェーンの先端ブロックの高さ（ジェネシスのみなら 0）
     pub fn main_chain_height(&self) -> i64 {
         self.get_main_chain()
+            .last()
+            .and_then(|&id| self.get_block(id))
+            .map(|b| b.height())
+            .unwrap_or(0)
+    }
+
+    /// 終了後レポート用のメインチェーン先端高さ（未告知ブロックを含む）
+    pub fn main_chain_height_for_export(&self) -> i64 {
+        self.get_main_chain_for_export()
             .last()
             .and_then(|&id| self.get_block(id))
             .map(|b| b.height())
@@ -358,6 +384,29 @@ mod chain_metrics_tests {
         let m_all = chain.chain_metrics(None, None, None);
         assert_eq!(m_all.mined_blocks, 4);
         assert!(m.honest_mined_blocks < m_all.mined_blocks);
+    }
+
+    #[test]
+    fn export_main_chain_includes_unannounced_heavier_branch() {
+        let protocol = test_protocol();
+        let mut chain = Blockchain::new(protocol.as_ref(), 3);
+
+        // 公衆鎖: genesis -> h1 (告知済み)
+        let b1 = push_block(&mut chain, 1, 1, GENESIS_BLOCK_ID, 1, true);
+        // 私有の重い分岐: genesis -> h2 -> h3 (未告知・攻撃者)
+        let b2 = push_block(&mut chain, 2, 2, GENESIS_BLOCK_ID, 0, false);
+        let b3 = push_block(&mut chain, 3, 3, b2, 0, false);
+        for id in [b1, b2, b3] {
+            chain.mark_block_generation_completed(id);
+        }
+
+        let public = chain.get_main_chain();
+        assert_eq!(public.len(), 2, "announced main: genesis + b1");
+        assert_eq!(public.last(), Some(&b1));
+
+        let export = chain.get_main_chain_for_export();
+        assert_eq!(export, vec![GENESIS_BLOCK_ID, b2, b3]);
+        assert_eq!(chain.main_chain_height_for_export(), 3);
     }
 
     #[test]
