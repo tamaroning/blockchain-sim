@@ -2,16 +2,19 @@
 """
 stale block rate を計測し `results/stale_rate.csv` を生成する。
 
-3 ノード（各 1/3 の hashrate、うち 2 は honest 固定、残り 1 が honest / selfish）。
-伝播遅延 Δ(ms) は固定し、Bitcoin `Fixed` genesis 難易度 D=1 のときネットワーク平均ブロック間隔を
-「Poisson レース」の近似 ``T_mean ≈ D・2^32 / H_tot`` とみなして総 hashrate H_tot を選び、
-無次元 ``λΔ = Δ / T_mean`` が ``10^k``（k は LAMBDA_DELTA_EXPS）になるように λ（＝ブロック発生レート）を調整する。
+2 ノード（攻撃者 + honest 1）。攻撃者戦略は timewarp / selfish_mining。
+名目ハッシュレート割合 alpha と無次元 λΔ をスイープする。
 
-CSV 出力列（`eg.csv` に合わせる）::
-  strategy, inverse_lambda_delta, stale_rate
+伝播遅延 Δ(ms) を固定し、Bitcoin `Fixed` genesis 難易度 D=1 のときネットワーク平均ブロック間隔を
+「Poisson レース」の近似 ``T_mean ≈ D·2^32 / H_tot`` とみなして総 hashrate H_tot を選び、
+無次元 ``λΔ = Δ / T_mean`` が ``10^k``（k は LAMBDA_DELTA_EXPS）になるように λ を調整する。
 
+CSV 出力列::
+  strategy, alpha, inverse_lambda_delta, stale_rate
+
+- strategy は ``timewarp`` または ``selfish_mining``（プロファイル上の type は ``selfish``）
 - inverse_lambda_delta = 1 / (λΔ) = ``10^(-k)``
-- stale_rate は各条件で複数シード実行し、シミュレータが書く `stale_rate` の平均。
+- stale_rate は各条件で複数シード実行し、シミュレータが書く `stale_rate` の中央値
 
 前提: Bitcoin のみ（`--genesis-difficulty-mode fixed`）。
 """
@@ -26,6 +29,15 @@ import sys
 from pathlib import Path
 from typing import Any, Literal
 
+StrategyName = Literal["timewarp", "selfish_mining"]
+
+STRATEGIES: tuple[StrategyName, ...] = ("timewarp", "selfish_mining")
+# プロファイル JSON の strategy.type（CSV の strategy 名とは別）
+PROFILE_TYPES: dict[StrategyName, str] = {
+    "timewarp": "timewarp",
+    "selfish_mining": "selfish",
+}
+
 SCRIPT_PATH = Path(__file__).resolve()
 PROJECT_ROOT = next(
     c for c in [SCRIPT_PATH.parent, *SCRIPT_PATH.parents] if (c / "Cargo.toml").exists()
@@ -39,54 +51,48 @@ RESULTS_DIR = STALE_RATE_DIR / "results"
 PROFILES_DIR = STALE_RATE_DIR / "profiles" / "generated"
 TMP_METRICS_DIR = RESULTS_DIR / "_metrics_tmp"
 
-# λΔ = 10^k となる k の列（コメント仕様）
+# λΔ = 10^k となる k の列
 LAMBDA_DELTA_EXPS: tuple[float, ...] = (-2.5, -2.0, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0)
+# 攻撃者の名目ハッシュレート割合 alpha（timewarp ノード / 総 hashrate）
+ALPHAS: tuple[float, ...] = (0.1, 0.3, 0.5, 0.7, 0.9)
 BITCOIN_D_TIMES_2_32 = 2.0**32
-
-
-StrategyName = Literal["honest", "selfish_mining"]
 
 
 def total_hashrate_for_lambda_delta_exp(
     *, delay_ms: float, exp: float, d_fixed: float = 1.0
 ) -> int:
-    """λΔ = 10^exp としたいときの H_tot（近似式用）。最低 3（ノード 1 ずつ）。"""
+    """λΔ = 10^exp としたいときの H_tot（近似式用）。2 ノード各 1 以上になるよう最低 2。"""
     lambda_delta = 10.0**exp
     t_mean_ms = delay_ms / lambda_delta
     if t_mean_ms <= 0:
         raise ValueError("delay_ms / lambda_delta が正である必要があります")
     h = int(round(d_fixed * BITCOIN_D_TIMES_2_32 / t_mean_ms))
-    return max(3, h)
+    return max(2, h)
 
 
-def split_three_equal(total: int) -> tuple[int, int, int]:
-    base = total // 3
-    rem = total % 3
-    a = base + (1 if rem > 0 else 0)
-    b = base + (1 if rem > 1 else 0)
-    c = total - a - b
-    return a, b, c
+def split_two_by_alpha(total: int, alpha: float) -> tuple[int, int]:
+    """攻撃者 alpha、残り honest（2 ノード）。各ノード hashrate は最低 1。"""
+    if not (0.0 < alpha < 1.0):
+        raise ValueError(f"alpha は (0, 1) である必要があります: {alpha}")
+    attacker = int(round(total * alpha))
+    attacker = max(1, min(attacker, total - 1))
+    honest = total - attacker
+    return attacker, honest
 
 
 def build_profile(
     *,
-    third_strategy: StrategyName,
+    strategy: StrategyName,
+    alpha: float,
     total_hashrate: int,
     profile_path: Path,
 ) -> Path:
-    h0, h1, h2 = split_three_equal(total_hashrate)
-    if third_strategy == "honest":
-        nodes: list[dict[str, Any]] = [
-            {"hashrate": h0, "strategy": {"type": "honest"}},
-            {"hashrate": h1, "strategy": {"type": "honest"}},
-            {"hashrate": h2, "strategy": {"type": "honest"}},
-        ]
-    else:
-        nodes = [
-            {"hashrate": h0, "strategy": {"type": "honest"}},
-            {"hashrate": h1, "strategy": {"type": "honest"}},
-            {"hashrate": h2, "strategy": {"type": "selfish"}},
-        ]
+    attacker_hr, honest_hr = split_two_by_alpha(total_hashrate, alpha)
+    profile_type = PROFILE_TYPES[strategy]
+    nodes: list[dict[str, Any]] = [
+        {"hashrate": attacker_hr, "strategy": {"type": profile_type}},
+        {"hashrate": honest_hr, "strategy": {"type": "honest"}},
+    ]
     return write_profile_json({"nodes": nodes}, profile_path)
 
 
@@ -108,7 +114,7 @@ def run_simulation(
         f"--profile={profile_path}",
         f"--delay={delay_ms}",
         f"--seed={seed}",
-        f"--genesis-difficulty-mode=fixed",
+        "--genesis-difficulty-mode=fixed",
         f"--metrics={metrics_csv}",
     ]
     env = {**os.environ, "RUST_LOG": "error"}
@@ -132,24 +138,31 @@ def read_stale_rate(metrics_csv: Path) -> float:
 def measure_group(
     *,
     binary_path: Path,
-    third_strategy: StrategyName,
+    strategy: StrategyName,
+    alpha: float,
     exp: float,
     runs: int,
     seed_start: int,
     end_round: int,
     delay_ms: int,
     protocol: str,
-) -> tuple[float, float]:
-    """戻り値: (inverse_lambda_delta, mean stale_rate)"""
+) -> tuple[float, float, float]:
+    """戻り値: (alpha, inverse_lambda_delta, median stale_rate)"""
     h_tot = total_hashrate_for_lambda_delta_exp(delay_ms=float(delay_ms), exp=exp)
-    strat_slug = "honest" if third_strategy == "honest" else "selfish"
-    profile_path = PROFILES_DIR / f"stale_{strat_slug}_exp_{exp:g}.json"
-    build_profile(third_strategy=third_strategy, total_hashrate=h_tot, profile_path=profile_path)
+    alpha_tag = str(alpha).replace(".", "p")
+    strat_slug = "selfish" if strategy == "selfish_mining" else strategy
+    profile_path = PROFILES_DIR / f"{strat_slug}_alpha_{alpha_tag}_exp_{exp:g}.json"
+    build_profile(
+        strategy=strategy, alpha=alpha, total_hashrate=h_tot, profile_path=profile_path
+    )
 
     rates: list[float] = []
     for i in range(runs):
         seed = seed_start + i
-        mpath = TMP_METRICS_DIR / f"{strat_slug}_exp_{exp:g}_run{i}_seed{seed}.csv"
+        mpath = (
+            TMP_METRICS_DIR
+            / f"{strat_slug}_alpha_{alpha_tag}_exp_{exp:g}_run{i}_seed{seed}.csv"
+        )
         run_simulation(
             binary_path=binary_path,
             profile_path=profile_path,
@@ -162,11 +175,13 @@ def measure_group(
         rates.append(read_stale_rate(mpath))
 
     inverse_ld = 1.0 / (10.0**exp)
-    return inverse_ld, statistics.mean(rates)
+    return alpha, inverse_ld, statistics.median(rates)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="stale block rate sweep（3 ノード・1/3 hashrate）")
+    parser = argparse.ArgumentParser(
+        description="stale block rate sweep（timewarp/selfish + honest 2 ノード、alpha × λΔ）"
+    )
     parser.add_argument("--runs", type=int, default=10, help="各条件のシード反復回数")
     parser.add_argument("--seed-start", type=int, default=0)
     parser.add_argument("--end-round", type=int, default=100)
@@ -189,29 +204,33 @@ def main() -> None:
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
     TMP_METRICS_DIR.mkdir(parents=True, exist_ok=True)
 
-    strategies: tuple[StrategyName, ...] = ("honest", "selfish_mining")
-    rows: list[tuple[str, float, float]] = []
+    rows: list[tuple[str, float, float, float]] = []
 
-    for strat in strategies:
-        for exp in LAMBDA_DELTA_EXPS:
-            inv_ld, mean_sr = measure_group(
-                binary_path=binary_path,
-                third_strategy=strat,
-                exp=exp,
-                runs=args.runs,
-                seed_start=args.seed_start,
-                end_round=args.end_round,
-                delay_ms=args.delay_ms,
-                protocol=args.protocol,
-            )
-            rows.append((strat, inv_ld, mean_sr))
-            print(f"{strat} λΔ=10^{exp:g}  1/(λΔ)={inv_ld:g}  mean stale_rate={mean_sr:.6f}")
+    for strategy in STRATEGIES:
+        for alpha in ALPHAS:
+            for exp in LAMBDA_DELTA_EXPS:
+                a, inv_ld, median_sr = measure_group(
+                    binary_path=binary_path,
+                    strategy=strategy,
+                    alpha=alpha,
+                    exp=exp,
+                    runs=args.runs,
+                    seed_start=args.seed_start,
+                    end_round=args.end_round,
+                    delay_ms=args.delay_ms,
+                    protocol=args.protocol,
+                )
+                rows.append((strategy, a, inv_ld, median_sr))
+                print(
+                    f"{strategy} alpha={a:g} λΔ=10^{exp:g}  1/(λΔ)={inv_ld:g}  "
+                    f"median stale_rate={median_sr:.6f}"
+                )
 
     with args.output.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["strategy", "inverse_lambda_delta", "stale_rate"])
-        for strat, inv_ld, sr in rows:
-            w.writerow([strat, inv_ld, sr])
+        w.writerow(["strategy", "alpha", "inverse_lambda_delta", "stale_rate"])
+        for strat, a, inv_ld, sr in rows:
+            w.writerow([strat, a, inv_ld, sr])
 
     print(f"Wrote {args.output}")
 

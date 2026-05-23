@@ -5,6 +5,7 @@ pub mod event_queue;
 pub mod mining_strategy;
 pub mod node;
 pub mod profile;
+pub mod propagation_delay;
 pub mod protocol;
 pub mod simulator;
 pub mod types;
@@ -17,6 +18,7 @@ pub use mining_strategy::{
 };
 pub use node::Node;
 pub use profile::{NetworkProfile, NodeProfile};
+pub use propagation_delay::PropagationDelayMode;
 pub use protocol::{GenesisDifficultyMode, Protocol, ProtocolType};
 pub use simulator::BlockchainSimulator;
 pub use types::{ChainMetrics, Record};

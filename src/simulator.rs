@@ -7,6 +7,7 @@ use crate::event_queue::EventQueue;
 use crate::mining_strategy::Action;
 use crate::node::{Node, NodeId, NodeList};
 use crate::profile::NetworkProfile;
+use crate::propagation_delay::{propagation_delay_us, PropagationDelayMode};
 use crate::protocol::Protocol;
 use rand::prelude::*;
 use rand_distr::Exp;
@@ -18,8 +19,10 @@ pub struct Env {
     // Configuration
     /// The number of nodes.
     nodes: Vec<NodeId>,
-    /// ブロック伝搬の遅れ（**マイクロ秒**）。CLI の `--delay` は ms のまま渡し、内部で ×1000 する。
+    /// ブロック伝搬の遅れ Δ（**マイクロ秒**）。CLI の `--delay` は ms のまま渡し、内部で ×1000 する。
     pub delay_us: i64,
+    /// H/A 間で Δ の適用を変えるモード（`--propagation-delay-mode`）。
+    pub propagation_delay_mode: PropagationDelayMode,
     /// The total hashrate of all nodes.
     pub total_hashrate: i64,
     // Current environments
@@ -28,11 +31,17 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn new(nodes: &[Node], delay_ms: i64, protocol: &dyn Protocol) -> Self {
+    pub fn new(
+        nodes: &[Node],
+        delay_ms: i64,
+        propagation_delay_mode: PropagationDelayMode,
+        protocol: &dyn Protocol,
+    ) -> Self {
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
         Self {
             nodes: nodes.iter().map(|n| n.id()).collect(),
             delay_us: delay_ms.saturating_mul(1000),
+            propagation_delay_mode,
             total_hashrate,
             blockchain: Blockchain::new(&*protocol, total_hashrate),
         }
@@ -70,6 +79,7 @@ impl BlockchainSimulator {
         seed: u64,
         end_round: i64,
         delay: i64,
+        propagation_delay_mode: PropagationDelayMode,
         protocol: Box<dyn Protocol>,
     ) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
@@ -89,7 +99,7 @@ impl BlockchainSimulator {
         let total_hashrate = nodes.iter().map(|n| n.hashrate()).sum();
 
         Self {
-            env: Env::new(&nodes, delay, &*protocol),
+            env: Env::new(&nodes, delay, propagation_delay_mode, &*protocol),
             current_round: 0,
             current_time: 0,
             nodes: NodeList::new(nodes),
@@ -107,6 +117,7 @@ impl BlockchainSimulator {
         seed: u64,
         end_round: i64,
         delay: i64,
+        propagation_delay_mode: PropagationDelayMode,
         protocol: Box<dyn Protocol>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut nodes = Vec::with_capacity(profile.num_nodes());
@@ -126,7 +137,7 @@ impl BlockchainSimulator {
         let rng = StdRng::seed_from_u64(seed);
 
         Ok(Self {
-            env: Env::new(&nodes, delay, &*protocol),
+            env: Env::new(&nodes, delay, propagation_delay_mode, &*protocol),
             current_round: 0,
             current_time: 0,
             nodes: NodeList::new(nodes),
@@ -139,7 +150,13 @@ impl BlockchainSimulator {
     }
 
     fn propagation_time(&self, from: NodeId, to: NodeId) -> i64 {
-        if from == to { 0 } else { self.env.delay_us }
+        let from_honest = self.nodes.get_node(from).mining_strategy().is_honest();
+        propagation_delay_us(
+            self.env.propagation_delay_mode,
+            self.env.delay_us,
+            from_honest,
+            from == to,
+        )
     }
 
     pub fn enqueue_actions(&mut self, node_id: NodeId, actions: &[Action]) {

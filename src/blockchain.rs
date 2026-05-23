@@ -241,7 +241,7 @@ impl Blockchain {
     /// ジェネシス以外で、実際にマイニング完了イベントが発火したブロックを「採掘済み」とみなし、
     /// メインチェーンに乗らないものを stale と数える（未発火のプレ生成ブロックは母集団に含めない）。
     ///
-    /// `honest_minters` を渡したときは、同条件で honest ノード採掘分のみの指標も集計する。
+    /// `honest_minters` を渡したときは、同条件で honest / 非 honest 採掘分の指標も集計する。
     /// `min_height` / `max_height` でブロック高さの包含範囲を制限できる（ジェネシスは常に除外）。
     pub fn chain_metrics(
         &self,
@@ -255,6 +255,8 @@ impl Blockchain {
         let mut main_mined_blocks: u64 = 0;
         let mut honest_mined_blocks: u64 = 0;
         let mut honest_main_mined_blocks: u64 = 0;
+        let mut attacker_mined_blocks: u64 = 0;
+        let mut attacker_main_mined_blocks: u64 = 0;
         for block in self.blocks() {
             let height = block.height();
             if height == 0 {
@@ -282,6 +284,11 @@ impl Blockchain {
                 if on_main {
                     honest_main_mined_blocks += 1;
                 }
+            } else if honest_minters.is_some() {
+                attacker_mined_blocks += 1;
+                if on_main {
+                    attacker_main_mined_blocks += 1;
+                }
             }
         }
         let stale_blocks = mined_blocks.saturating_sub(main_mined_blocks);
@@ -296,6 +303,12 @@ impl Blockchain {
         } else {
             0.0
         };
+        let attacker_stale_blocks = attacker_mined_blocks.saturating_sub(attacker_main_mined_blocks);
+        let attacker_stale_rate = if attacker_mined_blocks > 0 {
+            attacker_stale_blocks as f64 / attacker_mined_blocks as f64
+        } else {
+            0.0
+        };
         ChainMetrics {
             mined_blocks,
             main_mined_blocks,
@@ -305,6 +318,10 @@ impl Blockchain {
             honest_main_mined_blocks,
             honest_stale_blocks,
             honest_stale_rate,
+            attacker_mined_blocks,
+            attacker_main_mined_blocks,
+            attacker_stale_blocks,
+            attacker_stale_rate,
         }
     }
 }
@@ -379,6 +396,10 @@ mod chain_metrics_tests {
             (m.honest_stale_rate - (1.0 / 3.0)).abs() < 1e-12,
             "honest_stale_rate = stale / mined"
         );
+        assert_eq!(m.attacker_mined_blocks, 1, "attacker blocks: b2");
+        assert_eq!(m.attacker_main_mined_blocks, 1, "on main: b2");
+        assert_eq!(m.attacker_stale_blocks, 0);
+        assert_eq!(m.attacker_stale_rate, 0.0);
 
         // 攻撃者ブロックは honest 母集団に入らない
         let m_all = chain.chain_metrics(None, None, None);

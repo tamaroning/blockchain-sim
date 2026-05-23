@@ -1,5 +1,6 @@
 use blockchain_sim::{
-    BlockchainSimulator, GenesisDifficultyMode, NetworkProfile, ProtocolType, node::NodeId,
+    BlockchainSimulator, GenesisDifficultyMode, NetworkProfile, PropagationDelayMode,
+    ProtocolType, node::NodeId,
 };
 use clap::Parser;
 use rand::Rng;
@@ -22,9 +23,13 @@ struct Cli {
     #[clap(long, default_value = "10")]
     end_round: i64,
 
-    /// The delay time for block propagation in ms.
+    /// 伝播遅延 Δ（ms）。全モードでこの値を基準にする。
     #[clap(long, default_value = "600")]
     delay: i64,
+
+    /// H/A 間の伝播遅延の仮定。uniform=全方向 Δ、attacker-favorable=H→* のみ Δ、attacker-unfavorable=A→* のみ Δ。
+    #[clap(long, value_enum, default_value_t = PropagationDelayMode::Uniform)]
+    propagation_delay_mode: PropagationDelayMode,
 
     #[clap(long, value_enum, default_value_t = ProtocolType::Bitcoin)]
     protocol: ProtocolType,
@@ -45,7 +50,7 @@ struct Cli {
     #[clap(long)]
     profile: Option<PathBuf>,
 
-    /// Single-row CSV: mined_blocks, …, stale_rate, honest_mined_blocks, …, honest_stale_rate
+    /// Single-row CSV: mined_blocks, …, stale_rate, honest_mined_blocks, …, honest_stale_rate, attacker_…, attacker_stale_rate
     #[clap(long)]
     metrics: Option<PathBuf>,
 
@@ -100,6 +105,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.seed.unwrap(),
             args.end_round,
             args.delay,
+            args.propagation_delay_mode,
             args.protocol.to_protocol(args.genesis_difficulty_mode),
         )
         .map_err(|e| format!("Failed to create simulator from profile: {}", e))?
@@ -109,6 +115,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             args.seed.unwrap(),
             args.end_round,
             args.delay,
+            args.propagation_delay_mode,
             args.protocol.to_protocol(args.genesis_difficulty_mode),
         )
     };
