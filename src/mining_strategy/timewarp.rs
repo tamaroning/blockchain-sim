@@ -3,40 +3,61 @@ use serde::{Deserialize, Serialize};
 
 use super::{Action, MiningStrategy, longest_chain};
 
+/// MTP（Median Time Past）算出に使う直近ブロック数のデフォルト値（Bitcoin 既定の 11）。
+pub const DEFAULT_MTP_WINDOW_SIZE: usize = 11;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimewarpStrategy {
     current_block_id: BlockId,
+    mtp_window_size: usize,
 }
 
 impl Default for TimewarpStrategy {
     fn default() -> Self {
-        Self {
-            current_block_id: GENESIS_BLOCK_ID,
-        }
+        Self::with_window_size(DEFAULT_MTP_WINDOW_SIZE)
     }
 }
 
-/// Bitcoin 風の timewarp 調整（MTP+1、2015 番目のブロックで +2h）。
+impl TimewarpStrategy {
+    pub fn with_window_size(mtp_window_size: usize) -> Self {
+        assert!(mtp_window_size >= 1, "mtp_window_size は 1 以上である必要があります");
+        Self {
+            current_block_id: GENESIS_BLOCK_ID,
+            mtp_window_size,
+        }
+    }
+
+    pub fn mtp_window_size(&self) -> usize {
+        self.mtp_window_size
+    }
+}
+
+/// Bitcoin 風の timewarp 調整（MTP+1ms、2015 番目（高さ % 2016 == 2015）のブロックで +2h）。
+///
+/// `mtp_window_size` は MTP 算出に用いる「parent を含む直近ブロック数」。
+/// 既定の 11 では parent と parent の祖先 10 ブロックのタイムスタンプ計 11 個から中央値を取る。
 pub(crate) fn timewarp_adjusted_timestamp(
     original_timestamp: i64,
     parent_block_id: BlockId,
     block_height: i64,
     env: &Env,
+    mtp_window_size: usize,
 ) -> i64 {
     if block_height % 2016 == 2015 {
         let two_hour_ms = 2 * 60 * 60 * 1000;
         return original_timestamp + two_hour_ms as i64;
     }
 
-    let mut last_11_block_timestamps = env
+    assert!(mtp_window_size >= 1, "mtp_window_size は 1 以上である必要があります");
+
+    let parent_timestamp = env.blockchain.get_block(parent_block_id).unwrap().time();
+    let mut timestamps: Vec<i64> = env
         .blockchain
-        .get_last_n_blocks(parent_block_id, 10)
+        .get_last_n_blocks(parent_block_id, mtp_window_size - 1)
         .iter()
         .map(|b| b.time())
-        .collect::<Vec<i64>>();
-    let _11th_block_timestamp = env.blockchain.get_block(parent_block_id).unwrap().time();
-    last_11_block_timestamps.push(_11th_block_timestamp);
-    let mut timestamps = last_11_block_timestamps;
+        .collect();
+    timestamps.push(parent_timestamp);
 
     timestamps.sort();
     let len = timestamps.len();
@@ -108,6 +129,12 @@ impl MiningStrategy for TimewarpStrategy {
         block_height: i64,
         env: &Env,
     ) -> i64 {
-        timewarp_adjusted_timestamp(original_timestamp, parent_block_id, block_height, env)
+        timewarp_adjusted_timestamp(
+            original_timestamp,
+            parent_block_id,
+            block_height,
+            env,
+            self.mtp_window_size,
+        )
     }
 }

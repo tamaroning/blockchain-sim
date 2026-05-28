@@ -67,8 +67,30 @@ README_TOTAL_HASHRATE_EH = 800
 I64_MAX = 2**63 - 1
 DEFAULT_TOTAL_HASHRATE = 800_000_000_000_000_000
 BITCOIN_TARGET_BLOCK_MS = 600_000
-# デフォルト λΔ: 10^k（k = 3.0, 2.5, …, -3.0）
-DEFAULT_LAMBDA_DELTAS = tuple(10**k for k in (2.5, 2.0, 1.5, 1.0, 0.5, 0, -0.5, -1, -1.5, -2, -2.5))
+# デフォルト λΔ: 10^k（k = ±POINT を STEP 刻みで対称スイープ、降順）
+DEFAULT_LAMBDA_DELTA_EXP_POINT = 2.5
+DEFAULT_LAMBDA_DELTA_EXP_STEP = 0.25
+
+
+def default_lambda_deltas(
+    exp_point: float = DEFAULT_LAMBDA_DELTA_EXP_POINT,
+    step: float = DEFAULT_LAMBDA_DELTA_EXP_STEP,
+) -> tuple[float, ...]:
+    """λΔ = 10^k の列。k は -exp_point から +exp_point を step 刻み（降順）。"""
+    if step <= 0:
+        raise ValueError("step は正である必要があります")
+    if exp_point < 0:
+        raise ValueError("exp_point は非負である必要があります")
+    n = int(round(exp_point / step))
+    if abs(n * step - exp_point) > 1e-9:
+        raise ValueError(
+            f"exp_point ({exp_point}) は step ({step}) の整数倍である必要があります"
+        )
+    exps = tuple(i * step for i in range(-n, n + 1))
+    return tuple(10**k for k in reversed(exps))
+
+
+DEFAULT_LAMBDA_DELTAS = default_lambda_deltas()
 # 評価目標 end_round 到達後、シミュレータをこの分だけ延長（分岐合流の余裕）
 SIMULATION_END_ROUND_BUFFER = 30
 # H→* は 0、A→* は Δ（攻撃者不利仮定）
@@ -645,7 +667,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=",".join(str(x) for x in DEFAULT_LAMBDA_DELTAS),
         help=(
             "カンマ区切りの λΔ（=Δ/λ。bitcoin では delay_ms = λΔ×600000）。"
-            "省略時は 10^-2.5 … 10^0.5（0.5 刻みの指数）"
+            f"省略時は 10^{DEFAULT_LAMBDA_DELTA_EXP_POINT} … "
+            f"10^{-DEFAULT_LAMBDA_DELTA_EXP_POINT}（指数 STEP={DEFAULT_LAMBDA_DELTA_EXP_STEP}）"
         ),
     )
     p.add_argument(

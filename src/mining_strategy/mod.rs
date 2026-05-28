@@ -11,7 +11,11 @@ mod timewarp;
 pub use honest::HonestMiningStrategy;
 pub use selfish::SelfishMiningStrategy;
 pub use selfish_timewarp::SelfishTimewarpStrategy;
-pub use timewarp::TimewarpStrategy;
+pub use timewarp::{DEFAULT_MTP_WINDOW_SIZE, TimewarpStrategy};
+
+fn default_mtp_window_size() -> usize {
+    DEFAULT_MTP_WINDOW_SIZE
+}
 
 fn cumulative_chain_work(env: &Env, tip_id: BlockId) -> U256 {
     env.blockchain
@@ -94,8 +98,16 @@ pub trait MiningStrategy: Send + Sync {
 pub enum MiningStrategyEnum {
     Honest,
     Selfish,
-    SelfishTimewarp,
-    Timewarp,
+    SelfishTimewarp {
+        /// MTP（中央値）算出に使う直近ブロック数。省略時は 11（Bitcoin 既定）。
+        #[serde(default = "default_mtp_window_size")]
+        mtp_window_size: usize,
+    },
+    Timewarp {
+        /// MTP（中央値）算出に使う直近ブロック数。省略時は 11（Bitcoin 既定）。
+        #[serde(default = "default_mtp_window_size")]
+        mtp_window_size: usize,
+    },
 }
 
 impl MiningStrategyEnum {
@@ -103,8 +115,12 @@ impl MiningStrategyEnum {
         match self {
             MiningStrategyEnum::Honest => Box::new(HonestMiningStrategy::default()),
             MiningStrategyEnum::Selfish => Box::new(SelfishMiningStrategy::default()),
-            MiningStrategyEnum::SelfishTimewarp => Box::new(SelfishTimewarpStrategy::default()),
-            MiningStrategyEnum::Timewarp => Box::new(TimewarpStrategy::default()),
+            MiningStrategyEnum::SelfishTimewarp { mtp_window_size } => {
+                Box::new(SelfishTimewarpStrategy::with_window_size(*mtp_window_size))
+            }
+            MiningStrategyEnum::Timewarp { mtp_window_size } => {
+                Box::new(TimewarpStrategy::with_window_size(*mtp_window_size))
+            }
         }
     }
 }
