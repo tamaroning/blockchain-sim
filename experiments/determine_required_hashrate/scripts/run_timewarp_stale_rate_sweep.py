@@ -10,8 +10,9 @@ timewarp_success_rate は run_required_hashrate_fifty_percent.py と同じエポ
 private_attack_success_rate は評価高さ区間の告知済みメインチェーン tip が
 攻撃者である run の割合（trials 平均。純粋な伸長競争の最終勝者）。
 
-シミュレーション長・metrics 高さ範囲は run_required_hashrate_fifty_percent.py と同様
-（--end-round 省略時は 2×epoch_len ブロック、skip_initial_epochs 以降を集計）。
+シミュレーション長・metrics 高さ範囲・伝播遅延モードは run_required_hashrate_fifty_percent.py と同様
+（--end-round 省略時は 2×epoch_len ブロック、skip_initial_epochs 以降を集計。
+ 伝播遅延は攻撃者有利仮定: H→* のみ Δ）。
 
 --update 指定時は既存の集約 CSV を読み込み、--lambda-deltas で指定した λΔ の行だけ
 再計算して置き換える（他の λΔ の行はそのまま残す）。
