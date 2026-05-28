@@ -310,10 +310,10 @@ impl Blockchain {
             0.0
         };
 
+        // 評価高さ区間における告知済みメインチェーン tip の minter が攻撃者なら成功（最終的な勝者）。
         let mut private_attack_reorg_success = false;
         if let Some(honest_set) = honest_minters {
-            let mut prev_on_main: Option<NodeId> = None;
-            for &bid in &main {
+            for &bid in main.iter().rev() {
                 let block = self.get_block(bid).expect("main chain block must exist");
                 let height = block.height();
                 if min_height.is_some_and(|min_h| height < min_h) {
@@ -322,14 +322,8 @@ impl Blockchain {
                 if max_height.is_some_and(|max_h| height > max_h) {
                     continue;
                 }
-                let minter = block.minter();
-                if let Some(prev) = prev_on_main {
-                    if honest_set.contains(&prev) && !honest_set.contains(&minter) {
-                        private_attack_reorg_success = true;
-                        break;
-                    }
-                }
-                prev_on_main = Some(minter);
+                private_attack_reorg_success = !honest_set.contains(&block.minter());
+                break;
             }
         }
 
@@ -430,6 +424,30 @@ mod chain_metrics_tests {
         let m_all = chain.chain_metrics(None, None, None);
         assert_eq!(m_all.mined_blocks, 4);
         assert!(m.honest_mined_blocks < m_all.mined_blocks);
+    }
+
+    #[test]
+    fn private_attack_success_is_attacker_tip_in_eval_range() {
+        let protocol = test_protocol();
+        let mut chain = Blockchain::new(protocol.as_ref(), 3);
+        let honest: HashSet<NodeId> = HashSet::from([NodeId::new(1)]);
+
+        let b1 = push_block(&mut chain, 1, 1, GENESIS_BLOCK_ID, 1, true);
+        let b2 = push_block(&mut chain, 2, 2, b1, 0, true);
+        for id in [b1, b2] {
+            chain.mark_block_generation_completed(id);
+        }
+        let m = chain.chain_metrics(Some(&honest), Some(2), Some(2));
+        assert!(m.private_attack_reorg_success);
+
+        let mut chain2 = Blockchain::new(protocol.as_ref(), 3);
+        let b1 = push_block(&mut chain2, 10, 1, GENESIS_BLOCK_ID, 1, true);
+        let b2 = push_block(&mut chain2, 11, 2, b1, 1, true);
+        for id in [b1, b2] {
+            chain2.mark_block_generation_completed(id);
+        }
+        let m2 = chain2.chain_metrics(Some(&honest), Some(2), Some(2));
+        assert!(!m2.private_attack_reorg_success);
     }
 
     #[test]

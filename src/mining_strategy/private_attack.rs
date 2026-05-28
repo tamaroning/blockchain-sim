@@ -5,7 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use super::{Action, MiningStrategy, longest_chain};
 
-/// Private-chain attack: 採掘ブロックを隠蔽し、公開鎖より長くなった時点で一斉公開する。
+use crate::PRIVATE_ATTACK_MIN_REORG_BLOCKS;
+
+/// Private-chain attack: 採掘ブロックを隠蔽し、公開鎖 tip より `PRIVATE_ATTACK_MIN_REORG_BLOCKS` ブロック以上
+/// リードした時点で一斉公開する。
+///
+/// honest が公開鎖を伸ばす一方で攻撃者は私有鎖を伸ばす「純粋な伸長競争」。
+/// 公開鎖が私有鎖を追い抜いたとき（`private_h <= public_h`）だけ私有分岐を捨てる。
+/// リードが 50 未満の段階で honest がブロックを出しても私有鎖は維持する。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrivateAttackMiningStrategy {
     public_chain: BlockId,
@@ -59,7 +66,7 @@ impl PrivateAttackMiningStrategy {
     fn publish_private_chain_if_ahead(&mut self, env: &Env) -> Vec<Action> {
         let private_h = self.chain_height(env, self.private_chain);
         let public_h = self.chain_height(env, self.public_chain);
-        if private_h <= public_h {
+        if private_h < public_h + PRIVATE_ATTACK_MIN_REORG_BLOCKS {
             return vec![];
         }
         let mut actions = Vec::new();

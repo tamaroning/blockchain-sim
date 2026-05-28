@@ -28,7 +28,7 @@ pub struct ChainMetrics {
     pub attacker_main_mined_blocks: u64,
     pub attacker_stale_blocks: u64,
     pub attacker_stale_rate: f64,
-    /// 告知済みメインチェーン上で honest→非 honest minter への切替（private attack の reorg 成功）
+    /// 評価高さ区間の告知済みメインチェーン tip が攻撃者（private attack の最終勝者）
     pub private_attack_reorg_success: bool,
 }
 

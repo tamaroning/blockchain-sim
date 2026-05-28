@@ -479,7 +479,7 @@ class PrivateAttackSuccessParams:
 
 
 def read_private_attack_success_from_metrics(metrics_csv: Path) -> float:
-    """--metrics CSV の private_attack_reorg_success（告知済みメインチェーン基準）を 0/1 で返す。"""
+    """--metrics CSV の private_attack_reorg_success（評価区間のメインチェーン tip が攻撃者）を 0/1 で返す。"""
     with metrics_csv.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         row = next(reader, None)
