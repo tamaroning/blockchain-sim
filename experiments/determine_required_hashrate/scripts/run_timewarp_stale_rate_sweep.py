@@ -4,7 +4,7 @@ stale_rate / honest_only_stale_rate / attacker_only_stale_rate / timewarp_succes
 
 攻撃者割合は既定で 0〜100% を 5% 刻み（0.05 きざみの割合 0.0〜1.0 に相当）。
 各 (strategy, λΔ, 割合) で --trials 本シミュレーションし、--stale-stat で stale 指標を集約する
-（既定 median_run: stale_rate が中央値に最も近い試行の3指標を採用）。
+（既定 mean: 各指標を trials 平均）。
 timewarp_success_rate は run_required_hashrate_fifty_percent.py と同じエポック合格判定
 （各 run の合格エポック数 / 評価対象エポック数）の trials 平均。
 
@@ -137,10 +137,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--stale-stat",
         choices=("mean", "median", "median_high", "median_run"),
-        default="median_run",
+        default="mean",
         help=(
-            "trials 集約（既定: median_run）。"
-            "stale_rate が中央値に最も近い 1 run の stale / honest / attacker 指標を採用"
+            "trials 集約（既定: mean）。"
+            "stale / honest / attacker 各指標を trials 平均。"
+            "median_run: stale_rate が中央値に最も近い 1 run の3指標を採用"
         ),
     )
     p.add_argument(
