@@ -1,9 +1,14 @@
 """
-timewarp / selfish_timewarp それぞれについて、λΔ (= 伝播遅延 Δ / 目標ブロック間隔 λ) を変えながら、
+timewarp / selfish_timewarp / private_attack それぞれについて、
+λΔ (= 伝播遅延 Δ / 目標ブロック間隔 λ) を変えながら、
 二分探索で「攻撃成功」の経験確率が約 50% となる攻撃者ハッシュレート割合を求める。
 
-Bitcoin 風の 2016 ブロックを 1 エポックとみなし、各 run で合格率（合格エポック数 / 評価対象エポック数）を出し、
-複数 run のその値の平均を --epoch-median-target（既定 0.5）と比較して二分探索する。
+timewarp / selfish_timewarp: Bitcoin 風の 2016 ブロックを 1 エポックとみなし、各 run で合格率
+（合格エポック数 / 評価対象エポック数）を出し、複数 run のその値の平均を --epoch-median-target
+（既定 0.5）と比較して二分探索する。
+
+private_attack: 評価高さ区間の告知済みメインチェーン tip が攻撃者である run を成功（0/1）とみなし、
+trials 平均を --epoch-median-target と比較して二分探索する（run_timewarp_stale_rate_sweep.py と同じ判定）。
 --end-round 省略時は 2×epoch_len ブロックのみシミュレーションする（DAA により実効 λΔ が長尺で初期から乖離しやすいため）。
 長い run が必要なら --end-round を明示する。
 
@@ -371,7 +376,7 @@ def mean_stale_rate_at_percent(
     def seed_for(r: int) -> int:
         if base_seed is not None:
             ld_i = int(round(lambda_delta * 1_000_000))
-            st = 1 if tag == "selfish" else 0
+            st = {"tw": 0, "selfish": 1, "private": 2}.get(tag, 0)
             return (
                 base_seed
                 + st * 1_000_000_000
@@ -725,6 +730,7 @@ def binary_search_fifty_percent(
     run_probe: Any,
     epoch_median_target: float,
     progress: bool = False,
+    rate_label: str = "mean per-run epoch rate",
 ) -> float:
     lo, hi = min_pct, max_pct
     for iter_num in range(1, max_iter + 1):
@@ -763,18 +769,18 @@ def binary_search_fifty_percent(
         if progress:
             if m > tgt:
                 decision = (
-                    f"mean per-run epoch rate {m:.4f} > {tgt} — "
+                    f"{rate_label} {m:.4f} > {tgt} — "
                     f"try lower share (hi := {mid}%)"
                 )
             elif m < tgt:
                 decision = (
-                    f"mean per-run epoch rate {m:.4f} < {tgt} — "
+                    f"{rate_label} {m:.4f} < {tgt} — "
                     f"try higher share (lo := {mid}%)"
                 )
             else:
-                decision = f"mean per-run epoch rate == {tgt} — done."
+                decision = f"{rate_label} == {tgt} — done."
             print(
-                f"  Binary search step {iter_num}: mean(run epoch rates)={m:.4f}; "
+                f"  Binary search step {iter_num}: {rate_label}={m:.4f}; "
                 f"{decision}",
                 flush=True,
             )
@@ -791,6 +797,18 @@ def binary_search_fifty_percent(
             flush=True,
         )
     return round((lo + hi) / 2 * 10) / 10.0
+
+
+@dataclass(frozen=True)
+class FiftyPercentStrategySpec:
+    name: str
+    tag: str
+    strategy_type: str
+    lo: float
+    hi: float
+    use_epoch_success: bool
+    min_pct_hint: str
+    max_pct_hint: str
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -821,7 +839,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "両戦略共通の探索下限 [%%]（省略時は戦略別: timewarp=--min-pct-timewarp, "
-            "selfish=--min-pct-selfish）"
+            "selfish=--min-pct-selfish, private_attack=--min-pct-private-attack）"
         ),
     )
     p.add_argument(
@@ -829,7 +847,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help=(
-            "両戦略共通の探索上限 [%%]（省略時は戦略別デフォルト。timewarp と selfish で区間が異なる）"
+            "両戦略共通の探索上限 [%%]（省略時は戦略別デフォルト。"
+            "timewarp / selfish / private_attack で区間が異なる）"
         ),
     )
     p.add_argument(
@@ -855,6 +874,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=55.00,
         help="selfish_timewarp の探索上限 [%%]（README の 47〜50%% 付近を想定しやや広め）",
+    )
+    p.add_argument(
+        "--min-pct-private-attack",
+        type=float,
+        default=0.01,
+        help="private_attack の探索下限 [%%]",
+    )
+    p.add_argument(
+        "--max-pct-private-attack",
+        type=float,
+        default=55.00,
+        help="private_attack の探索上限 [%%]（50%% 成功点は selfish 付近を想定）",
     )
     p.add_argument(
         "--tol-pct",
@@ -1025,14 +1056,54 @@ def main() -> None:
     sim_end_round = end_round + SIMULATION_END_ROUND_BUFFER
     metrics_min_height = epoch_params.skip_initial_epochs * epoch_params.epoch_len
     metrics_max_height = end_round - 1
+    private_params = PrivateAttackSuccessParams(
+        attacker_node_id=epoch_params.attacker_node_id,
+        min_height=metrics_min_height,
+        max_height=metrics_max_height,
+    )
     tw_lo = args.min_pct if args.min_pct is not None else args.min_pct_timewarp
     tw_hi = args.max_pct if args.max_pct is not None else args.max_pct_timewarp
     sf_lo = args.min_pct if args.min_pct is not None else args.min_pct_selfish
     sf_hi = args.max_pct if args.max_pct is not None else args.max_pct_selfish
-    if tw_lo >= tw_hi:
-        raise ValueError("timewarp: 探索区間は min < max にしてください（現在の下限・上限を確認）")
-    if sf_lo >= sf_hi:
-        raise ValueError("selfish_timewarp: 探索区間は min < max にしてください")
+    pa_lo = args.min_pct if args.min_pct is not None else args.min_pct_private_attack
+    pa_hi = args.max_pct if args.max_pct is not None else args.max_pct_private_attack
+    strategy_specs = (
+        FiftyPercentStrategySpec(
+            "selfish_timewarp",
+            "selfish",
+            "selfish_timewarp",
+            sf_lo,
+            sf_hi,
+            True,
+            "--min-pct-selfish",
+            "--max-pct-selfish",
+        ),
+        FiftyPercentStrategySpec(
+            "timewarp",
+            "tw",
+            "timewarp",
+            tw_lo,
+            tw_hi,
+            True,
+            "--min-pct-timewarp",
+            "--max-pct-timewarp",
+        ),
+        FiftyPercentStrategySpec(
+            "private_attack",
+            "private",
+            "private_attack",
+            pa_lo,
+            pa_hi,
+            False,
+            "--min-pct-private-attack",
+            "--max-pct-private-attack",
+        ),
+    )
+    for spec in strategy_specs:
+        if spec.lo >= spec.hi:
+            raise ValueError(
+                f"{spec.name}: 探索区間は min < max にしてください（現在の下限・上限を確認）"
+            )
 
     total_hr = args.total_hashrate if args.total_hashrate is not None else default_total_hashrate()
     if args.total_hashrate is None and not args.quiet:
@@ -1060,7 +1131,7 @@ def main() -> None:
 
     rows: list[dict[str, Any]] = []
 
-    total_phases = 2 * len(lambda_deltas)
+    total_phases = len(strategy_specs) * len(lambda_deltas)
     phase_num = 0
     prog = not args.no_progress
 
@@ -1081,16 +1152,22 @@ def main() -> None:
             flush=True,
         )
         print(
-            f"Phases: {total_phases} total (strategies: timewarp, selfish_timewarp × "
+            f"Phases: {total_phases} total (strategies: "
+            f"{', '.join(s.name for s in strategy_specs)} × "
             f"{len(lambda_deltas)} lambda_delta value(s)). "
             "Each phase: bracket check (2 batches of simulations) + binary search batches.",
             flush=True,
         )
         print("", flush=True)
 
-    for selfish in (True, False):
-        strategy = "selfish_timewarp" if selfish else "timewarp"
-        lo_p, hi_p = (sf_lo, sf_hi) if selfish else (tw_lo, tw_hi)
+    for spec in strategy_specs:
+        strategy = spec.name
+        lo_p, hi_p = spec.lo, spec.hi
+        rate_label = (
+            "mean per-run epoch rate"
+            if spec.use_epoch_success
+            else "mean per-run reorg success rate"
+        )
         for lambda_delta in lambda_deltas:
             phase_num += 1
             delay_ms = delay_ms_for_lambda_delta(lambda_delta, args.protocol)
@@ -1098,17 +1175,23 @@ def main() -> None:
                 print(
                     f"[Phase {phase_num}/{total_phases}] strategy={strategy!r} "
                     f"lambda_delta={lambda_delta} delay_ms={delay_ms} "
-                    f"epoch maintenance (mean target={args.epoch_median_target})",
+                    f"(mean target={args.epoch_median_target})",
                     flush=True,
                 )
                 print(
                     f"  Search bounds: attacker_share in [{lo_p}%, {hi_p}%] "
-                    f"(timewarp: [{tw_lo}, {tw_hi}], selfish: [{sf_lo}, {sf_hi}]).",
+                    f"(timewarp: [{tw_lo}, {tw_hi}], selfish: [{sf_lo}, {sf_hi}], "
+                    f"private_attack: [{pa_lo}, {pa_hi}]).",
                     flush=True,
                 )
+                action = (
+                    "take mean of per-run epoch success rates"
+                    if spec.use_epoch_success
+                    else "take mean of per-run reorg success (0/1)"
+                )
                 print(
-                    f"  Action: run blockchain-sim batches; take mean of per-run epoch "
-                    f"success rates vs target ({args.epoch_median_target}).",
+                    f"  Action: run blockchain-sim batches; {action} vs target "
+                    f"({args.epoch_median_target}).",
                     flush=True,
                 )
             results_base = (
@@ -1116,22 +1199,38 @@ def main() -> None:
                 if args.results_dir is not None
                 else base_dir / "results" / "runs_fifty_percent"
             )
-            tag = "selfish" if selfish else "tw"
+            tag = spec.tag
             results_dir = results_base / f"{tag}_ld{str(lambda_delta).replace('.', 'p')}"
 
             profile_cache: dict[float, Path] = {}
 
-            def get_profile(pct: float) -> Path:
+            def get_profile(pct: float, _spec: FiftyPercentStrategySpec = spec) -> Path:
                 return ensure_profile(
                     pct,
                     total_hr,
                     profile_dir,
-                    selfish_timewarp=selfish,
+                    strategy_type=_spec.strategy_type,
                     num_honest_nodes=args.num_honest_nodes,
                 )
 
             def run_probe(pct: float, prof: Path) -> float:
-                return mean_epoch_run_success_rates(
+                if spec.use_epoch_success:
+                    return mean_epoch_run_success_rates(
+                        attacker_percent=pct,
+                        trials=args.trials,
+                        binary_path=binary_path,
+                        profile_path=prof,
+                        results_dir=results_dir,
+                        end_round=sim_end_round,
+                        protocol=args.protocol,
+                        delay_ms=delay_ms,
+                        base_seed=args.base_seed,
+                        parallel=args.parallel,
+                        tag=tag,
+                        lambda_delta=lambda_delta,
+                        epoch_params=epoch_params,
+                    )
+                return mean_private_attack_run_success_rates(
                     attacker_percent=pct,
                     trials=args.trials,
                     binary_path=binary_path,
@@ -1144,7 +1243,7 @@ def main() -> None:
                     parallel=args.parallel,
                     tag=tag,
                     lambda_delta=lambda_delta,
-                    epoch_params=epoch_params,
+                    private_params=private_params,
                 )
 
             if lo_p not in profile_cache:
@@ -1160,7 +1259,7 @@ def main() -> None:
             stat_lo = run_probe(lo_p, profile_cache[lo_p])
             if prog:
                 print(
-                    f"  Bracket lower: mean(run epoch rates)={stat_lo:.4f} "
+                    f"  Bracket lower: {rate_label}={stat_lo:.4f} "
                     f"(target {args.epoch_median_target}).",
                     flush=True,
                 )
@@ -1172,26 +1271,26 @@ def main() -> None:
             stat_hi = run_probe(hi_p, profile_cache[hi_p])
             if prog:
                 print(
-                    f"  Bracket upper: mean(run epoch rates)={stat_hi:.4f} "
+                    f"  Bracket upper: {rate_label}={stat_hi:.4f} "
                     f"(target {args.epoch_median_target}).",
                     flush=True,
                 )
             m_lo, m_hi = stat_lo, stat_hi
             tgt = args.epoch_median_target
             if m_lo >= tgt:
-                hint = "--min-pct-selfish" if selfish else "--min-pct-timewarp"
+                hint = spec.min_pct_hint
                 if args.min_pct is not None:
                     hint = "--min-pct"
                 raise RuntimeError(
-                    f"{strategy} λΔ={lambda_delta}: 下限 {lo_p}% で合格率の平均が "
+                    f"{strategy} λΔ={lambda_delta}: 下限 {lo_p}% で成功率の平均が "
                     f"既に ≥ {tgt}。{hint} を下げるか区間を見直してください。"
                 )
             if m_hi <= tgt:
-                hint = "--max-pct-selfish" if selfish else "--max-pct-timewarp"
+                hint = spec.max_pct_hint
                 if args.max_pct is not None:
                     hint = "--max-pct"
                 raise RuntimeError(
-                    f"{strategy} λΔ={lambda_delta}: 上限 {hi_p}% で合格率の平均が "
+                    f"{strategy} λΔ={lambda_delta}: 上限 {hi_p}% で成功率の平均が "
                     f"まだ ≤ {tgt}。{hint} を上げるか区間を見直してください。"
                 )
 
@@ -1209,12 +1308,13 @@ def main() -> None:
                 run_probe=run_probe,
                 epoch_median_target=args.epoch_median_target,
                 progress=prog,
+                rate_label=rate_label,
             )
             prof_est = ensure_profile(
                 estimate,
                 total_hr,
                 profile_dir,
-                selfish_timewarp=selfish,
+                strategy_type=spec.strategy_type,
                 num_honest_nodes=args.num_honest_nodes,
             )
             if prog:
