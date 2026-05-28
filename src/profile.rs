@@ -39,6 +39,7 @@ pub struct NodeProfile {
 ///
 /// - `honest`: No parameters.
 /// - `selfish`: No parameters.
+/// - `private_attack`: No parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkProfile {
     /// A list of node profiles.

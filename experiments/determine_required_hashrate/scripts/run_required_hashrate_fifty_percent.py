@@ -139,7 +139,8 @@ def ensure_profile(
     total_hashrate: int,
     profile_dir: Path,
     *,
-    selfish_timewarp: bool,
+    strategy_type: str = "timewarp",
+    selfish_timewarp: bool | None = None,
     num_honest_nodes: int = 2,
 ) -> Path:
     if not (0 <= attacker_percent <= 100):
@@ -158,7 +159,11 @@ def ensure_profile(
             "total_hashrate を増やすか --num-honest-nodes を減らしてください。"
         )
 
-    strategy_type = "selfish_timewarp" if selfish_timewarp else "timewarp"
+    if selfish_timewarp is not None:
+        strategy_type = "selfish_timewarp" if selfish_timewarp else "timewarp"
+    allowed = ("timewarp", "selfish_timewarp", "private_attack")
+    if strategy_type not in allowed:
+        raise ValueError(f"strategy_type は {allowed} のいずれかである必要があります: {strategy_type}")
     profile_dir.mkdir(parents=True, exist_ok=True)
     pct_tenths = int(round(attacker_percent * 10))
     profile_path = (
@@ -466,6 +471,27 @@ def per_run_epoch_timewarp_success_rate(
     return passed / float(total) if total else 0.0
 
 
+@dataclass(frozen=True)
+class PrivateAttackSuccessParams:
+    attacker_node_id: int = 0
+    min_height: int = 0
+    max_height: int = I64_MAX
+
+
+def read_private_attack_success_from_metrics(metrics_csv: Path) -> float:
+    """--metrics CSV の private_attack_reorg_success（告知済みメインチェーン基準）を 0/1 で返す。"""
+    with metrics_csv.open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        row = next(reader, None)
+    if row is None:
+        raise ValueError(f"metrics CSV が空です: {metrics_csv}")
+    if "private_attack_reorg_success" not in row:
+        raise ValueError(
+            f"metrics CSV に private_attack_reorg_success がありません: {metrics_csv}"
+        )
+    return 1.0 if str(row["private_attack_reorg_success"]).lower() in ("true", "1") else 0.0
+
+
 def _single_epoch_rate_trial_job(
     args: tuple[
         Path,
@@ -571,6 +597,118 @@ def mean_epoch_run_success_rates(
     else:
         with ThreadPoolExecutor(max_workers=parallel) as ex:
             futs = [ex.submit(_single_epoch_rate_trial_job, j) for j in jobs]
+            rates = [f.result() for f in as_completed(futs)]
+    return statistics.mean(rates)
+
+
+def _single_private_attack_rate_trial_job(
+    args: tuple[
+        Path,
+        Path,
+        Path,
+        float,
+        int,
+        int,
+        str,
+        int,
+        int,
+        str,
+        float,
+        PrivateAttackSuccessParams,
+    ],
+) -> float:
+    (
+        binary_path,
+        profile_path,
+        results_dir,
+        attacker_percent,
+        run_index,
+        end_round,
+        protocol,
+        delay_ms,
+        seed,
+        tag,
+        lambda_delta,
+        private_params,
+    ) = args
+    results_dir.mkdir(parents=True, exist_ok=True)
+    pct_tenths = int(round(attacker_percent * 10))
+    ld_tag = str(lambda_delta).replace(".", "p")
+    metrics_csv = (
+        results_dir
+        / f"{tag}_ld{ld_tag}_pct_{pct_tenths:04d}_run_{run_index:04d}_metrics.csv"
+    )
+    run_one_simulation(
+        binary_path=binary_path,
+        profile_path=profile_path,
+        end_round=end_round,
+        delay_ms=delay_ms,
+        protocol=protocol,
+        metrics_csv=metrics_csv,
+        metrics_min_height=private_params.min_height,
+        metrics_max_height=private_params.max_height,
+        seed=seed,
+    )
+    rate = read_private_attack_success_from_metrics(metrics_csv)
+    if not os.environ.get("KEEP_RAW"):
+        metrics_csv.unlink(missing_ok=True)
+    return rate
+
+
+def mean_private_attack_run_success_rates(
+    *,
+    attacker_percent: float,
+    trials: int,
+    binary_path: Path,
+    profile_path: Path,
+    results_dir: Path,
+    end_round: int,
+    protocol: str,
+    delay_ms: int,
+    base_seed: int | None,
+    parallel: int,
+    tag: str,
+    lambda_delta: float,
+    private_params: PrivateAttackSuccessParams,
+) -> float:
+    """各 run の reorg 成功（0/1）の平均を返す。"""
+    pct_i = int(round(attacker_percent * 10))
+
+    def seed_for(r: int) -> int:
+        if base_seed is not None:
+            ld_i = int(round(lambda_delta * 1_000_000))
+            st = {"timewarp": 0, "selfish": 1, "private": 2}.get(tag, 0)
+            return (
+                base_seed
+                + st * 1_000_000_000
+                + ld_i * 100_000
+                + pct_i * 1_000
+                + r
+            ) % (2**63)
+        return int.from_bytes(os.urandom(8), "little") & ((1 << 63) - 1)
+
+    jobs = [
+        (
+            binary_path,
+            profile_path,
+            results_dir,
+            attacker_percent,
+            r,
+            end_round,
+            protocol,
+            delay_ms,
+            seed_for(r),
+            tag,
+            lambda_delta,
+            private_params,
+        )
+        for r in range(1, trials + 1)
+    ]
+    if parallel <= 1:
+        rates = [_single_private_attack_rate_trial_job(j) for j in jobs]
+    else:
+        with ThreadPoolExecutor(max_workers=parallel) as ex:
+            futs = [ex.submit(_single_private_attack_rate_trial_job, j) for j in jobs]
             rates = [f.result() for f in as_completed(futs)]
     return statistics.mean(rates)
 

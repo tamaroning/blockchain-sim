@@ -1,12 +1,13 @@
 """
-timewarp / selfish_timewarp それぞれについて λΔ と攻撃者ハッシュレート割合をスイープし、
-stale_rate / honest_only_stale_rate / attacker_only_stale_rate / timewarp_success_rate を CSV に出力する。
+timewarp / selfish_timewarp / private_attack について λΔ と攻撃者ハッシュレート割合をスイープし、
+stale_rate / honest_only_stale_rate / attacker_only_stale_rate と各戦略の成功確率を CSV に出力する。
 
 攻撃者割合は既定で 0〜100% を 5% 刻み（0.05 きざみの割合 0.0〜1.0 に相当）。
 各 (strategy, λΔ, 割合) で --trials 本シミュレーションし、--stale-stat で stale 指標を集約する
 （既定 mean: 各指標を trials 平均）。
 timewarp_success_rate は run_required_hashrate_fifty_percent.py と同じエポック合格判定
 （各 run の合格エポック数 / 評価対象エポック数）の trials 平均。
+private_attack_success_rate は評価高さ区間で honest→攻撃者 minter の reorg が起きた run の割合（trials 平均）。
 
 シミュレーション長・metrics 高さ範囲は run_required_hashrate_fifty_percent.py と同様
 （--end-round 省略時は 2×epoch_len ブロック、skip_initial_epochs 以降を集計）。
@@ -44,11 +45,20 @@ from run_required_hashrate_fifty_percent import (
     default_total_hashrate,
     delay_ms_for_lambda_delta,
     ensure_profile,
+    PrivateAttackSuccessParams,
     mean_epoch_run_success_rates,
+    mean_private_attack_run_success_rates,
     mean_stale_rate_at_percent,
 )
 
 DEFAULT_ATTACKER_PERCENTS = tuple(float(i) for i in range(0, 101, 5))
+
+ALL_SWEEP_STRATEGIES = ("timewarp", "selfish_timewarp", "private_attack")
+SWEEP_STRATEGY_SPECS: dict[str, tuple[str, str]] = {
+    "timewarp": ("timewarp", "tw_sweep"),
+    "selfish_timewarp": ("selfish_timewarp", "selfish"),
+    "private_attack": ("private_attack", "pa_sweep"),
+}
 
 CSV_FIELDNAMES = [
     "strategy",
@@ -60,11 +70,33 @@ CSV_FIELDNAMES = [
     "honest_only_stale_rate",
     "attacker_only_stale_rate",
     "timewarp_success_rate",
+    "private_attack_success_rate",
 ]
 
 
 def lambda_delta_key(lambda_delta: float) -> int:
     return int(round(lambda_delta * 1_000_000))
+
+
+def parse_strategies(raw: str) -> tuple[str, ...]:
+    strategies = tuple(s.strip() for s in raw.split(",") if s.strip())
+    if not strategies:
+        raise ValueError("--strategies が空です")
+    unknown = [s for s in strategies if s not in SWEEP_STRATEGY_SPECS]
+    if unknown:
+        raise ValueError(
+            f"未知の strategy: {unknown}（有効: {', '.join(ALL_SWEEP_STRATEGIES)}）"
+        )
+    return strategies
+
+
+def sweep_strategy_tuples(
+    strategies: tuple[str, ...],
+) -> tuple[tuple[str, str, str], ...]:
+    return tuple(
+        (name, SWEEP_STRATEGY_SPECS[name][0], SWEEP_STRATEGY_SPECS[name][1])
+        for name in strategies
+    )
 
 
 def default_attacker_percents(step_pct: float, pct_min: float, pct_max: float) -> tuple[float, ...]:
@@ -153,21 +185,37 @@ def build_parser() -> argparse.ArgumentParser:
             "（新規 λΔ は CSV 全体の割合リスト）"
         ),
     )
+    p.add_argument(
+        "--strategies",
+        type=str,
+        default=",".join(ALL_SWEEP_STRATEGIES),
+        help=(
+            "カンマ区切りの strategy（既定: timewarp,selfish_timewarp,private_attack）。"
+            "既存 CSV がある場合、指定した strategy の行だけ再計算・置換し、"
+            "他 strategy の行は保持する"
+        ),
+    )
     return p
 
 
 def load_existing_rows(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
         raise FileNotFoundError(f"更新対象の CSV が見つかりません: {path}")
+    legacy_fieldnames = CSV_FIELDNAMES[:-1]
     with path.open(encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
-        if reader.fieldnames != CSV_FIELDNAMES:
+        fieldnames = reader.fieldnames
+        if fieldnames not in (CSV_FIELDNAMES, legacy_fieldnames):
             raise ValueError(
                 f"CSV 列が想定と異なります: {path}\n"
                 f"expected={CSV_FIELDNAMES}\n"
-                f"actual={reader.fieldnames}"
+                f"actual={fieldnames}"
             )
-        return list(reader)
+        rows = list(reader)
+    if fieldnames == legacy_fieldnames:
+        for row in rows:
+            row["private_attack_success_rate"] = ""
+    return rows
 
 
 def attacker_percents_from_existing_rows(
@@ -206,7 +254,7 @@ def resolve_lambda_deltas_for_update(
 
 
 def sort_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    strategy_order = {"timewarp": 0, "selfish_timewarp": 1}
+    strategy_order = {"timewarp": 0, "selfish_timewarp": 1, "private_attack": 2}
 
     def sort_key(row: dict[str, Any]) -> tuple[int, int, float]:
         return (
@@ -236,6 +284,7 @@ def run_sweep_rows(
     metrics_min_height: int,
     metrics_max_height: int,
     epoch_params: EpochSuccessParams,
+    private_params: PrivateAttackSuccessParams,
     binary_path: Path,
     results_base: Path,
     profile_dir: Path,
@@ -246,12 +295,13 @@ def run_sweep_rows(
     parallel: int,
     stale_stat: str,
     prog: bool,
+    strategies: tuple[str, ...] = ALL_SWEEP_STRATEGIES,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    strategies = ("timewarp", "selfish_timewarp")
-    total_cells = len(strategies) * len(lambda_deltas) * len(attacker_percents)
+    sweep_strategies = sweep_strategy_tuples(strategies)
+    total_cells = len(sweep_strategies) * len(lambda_deltas) * len(attacker_percents)
     cell_num = 0
-    profile_cache: dict[tuple[float, bool], Path] = {}
+    profile_cache: dict[tuple[str, float], Path] = {}
 
     if prog:
         print(
@@ -271,9 +321,7 @@ def run_sweep_rows(
         print(f"Total grid cells: {total_cells}", flush=True)
         print("", flush=True)
 
-    for selfish in (False, True):
-        strategy = "selfish_timewarp" if selfish else "timewarp"
-        tag = "selfish" if selfish else "tw_sweep"
+    for strategy, strategy_type, tag in sweep_strategies:
         for lambda_delta in lambda_deltas:
             delay_ms = delay_ms_for_lambda_delta(lambda_delta, protocol)
             ld_tag = str(lambda_delta).replace(".", "p")
@@ -281,14 +329,14 @@ def run_sweep_rows(
 
             for attacker_percent in attacker_percents:
                 cell_num += 1
-                cache_key = (attacker_percent, selfish)
+                cache_key = (strategy_type, attacker_percent)
                 try:
                     if cache_key not in profile_cache:
                         profile_cache[cache_key] = ensure_profile(
                             attacker_percent,
                             total_hr,
                             profile_dir,
-                            selfish_timewarp=selfish,
+                            strategy_type=strategy_type,
                             num_honest_nodes=num_honest_nodes,
                         )
                     profile_path = profile_cache[cache_key]
@@ -326,21 +374,40 @@ def run_sweep_rows(
                     metrics_max_height=metrics_max_height,
                     stale_stat=stale_stat,
                 )
-                timewarp_success_rate = mean_epoch_run_success_rates(
-                    attacker_percent=attacker_percent,
-                    trials=trials,
-                    binary_path=binary_path,
-                    profile_path=profile_path,
-                    results_dir=results_dir,
-                    end_round=sim_end_round,
-                    protocol=protocol,
-                    delay_ms=delay_ms,
-                    base_seed=base_seed,
-                    parallel=parallel,
-                    tag=tag,
-                    lambda_delta=lambda_delta,
-                    epoch_params=epoch_params,
-                )
+                timewarp_success_rate = ""
+                private_attack_success_rate = ""
+                if strategy in ("timewarp", "selfish_timewarp"):
+                    timewarp_success_rate = mean_epoch_run_success_rates(
+                        attacker_percent=attacker_percent,
+                        trials=trials,
+                        binary_path=binary_path,
+                        profile_path=profile_path,
+                        results_dir=results_dir,
+                        end_round=sim_end_round,
+                        protocol=protocol,
+                        delay_ms=delay_ms,
+                        base_seed=base_seed,
+                        parallel=parallel,
+                        tag=tag,
+                        lambda_delta=lambda_delta,
+                        epoch_params=epoch_params,
+                    )
+                if strategy == "private_attack":
+                    private_attack_success_rate = mean_private_attack_run_success_rates(
+                        attacker_percent=attacker_percent,
+                        trials=trials,
+                        binary_path=binary_path,
+                        profile_path=profile_path,
+                        results_dir=results_dir,
+                        end_round=sim_end_round,
+                        protocol=protocol,
+                        delay_ms=delay_ms,
+                        base_seed=base_seed,
+                        parallel=parallel,
+                        tag=tag,
+                        lambda_delta=lambda_delta,
+                        private_params=private_params,
+                    )
                 rows.append(
                     {
                         "strategy": strategy,
@@ -352,6 +419,7 @@ def run_sweep_rows(
                         "honest_only_stale_rate": stale_rates_agg.honest_only_stale_rate,
                         "attacker_only_stale_rate": stale_rates_agg.attacker_only_stale_rate,
                         "timewarp_success_rate": timewarp_success_rate,
+                        "private_attack_success_rate": private_attack_success_rate,
                     }
                 )
     return rows
@@ -370,6 +438,8 @@ def main() -> None:
     if not requested_lambda_deltas:
         raise ValueError("--lambda-deltas が空です")
 
+    selected_strategies = parse_strategies(args.strategies)
+
     if args.trials <= 0:
         raise ValueError("--trials は正である必要があります")
     if args.epoch_len <= 0:
@@ -386,7 +456,6 @@ def main() -> None:
         attacker_node_id=0,
         skip_initial_epochs=args.skip_initial_epochs,
     )
-
     if args.end_round is not None:
         end_round = args.end_round
     else:
@@ -397,6 +466,11 @@ def main() -> None:
     sim_end_round = end_round + SIMULATION_END_ROUND_BUFFER
     metrics_min_height = epoch_params.skip_initial_epochs * epoch_params.epoch_len
     metrics_max_height = end_round - 1
+    private_params = PrivateAttackSuccessParams(
+        attacker_node_id=epoch_params.attacker_node_id,
+        min_height=metrics_min_height,
+        max_height=metrics_max_height,
+    )
 
     total_hr = args.total_hashrate if args.total_hashrate is not None else default_total_hashrate()
     if args.total_hashrate is None and not args.quiet:
@@ -441,6 +515,7 @@ def main() -> None:
             row
             for row in existing_rows
             if lambda_delta_key(float(row["lambda_delta"])) not in replace_keys
+            or row["strategy"] not in selected_strategies
         ]
         if args.attacker_percents is not None:
             attacker_percents = tuple(
@@ -474,10 +549,7 @@ def main() -> None:
                 flush=True,
             )
             print(f"Keeping {len(kept_rows)} row(s) for other λΔ values", flush=True)
-            print(
-                "strategies (2): ('timewarp', 'selfish_timewarp')",
-                flush=True,
-            )
+            print(f"strategies ({len(selected_strategies)}): {selected_strategies}", flush=True)
     else:
         lambda_deltas = requested_lambda_deltas
         if args.attacker_percents is not None:
@@ -488,12 +560,29 @@ def main() -> None:
             attacker_percents = default_attacker_percents(
                 args.pct_step, args.pct_min, args.pct_max
             )
+        if output_csv.is_file() and set(selected_strategies) != set(ALL_SWEEP_STRATEGIES):
+            existing_rows = load_existing_rows(output_csv)
+            kept_rows = [
+                row for row in existing_rows if row["strategy"] not in selected_strategies
+            ]
+            if args.attacker_percents is None:
+                inherited = attacker_percents_from_existing_rows(existing_rows)
+                if inherited:
+                    attacker_percents = inherited
+                    if prog:
+                        print(
+                            f"攻撃者割合 {len(attacker_percents)} 点を既存 CSV から引き継ぎ",
+                            flush=True,
+                        )
+            if prog:
+                print(
+                    f"既存 CSV から {len(kept_rows)} 行を保持"
+                    f"（{', '.join(s for s in ALL_SWEEP_STRATEGIES if s not in selected_strategies)}）",
+                    flush=True,
+                )
         if prog:
             print("=== Timewarp stale-rate sweep: starting ===", flush=True)
-            print(
-                "strategies (2): ('timewarp', 'selfish_timewarp')",
-                flush=True,
-            )
+            print(f"strategies ({len(selected_strategies)}): {selected_strategies}", flush=True)
 
     if attacker_percents is not None:
         if not attacker_percents:
@@ -520,6 +609,7 @@ def main() -> None:
                     metrics_min_height=metrics_min_height,
                     metrics_max_height=metrics_max_height,
                     epoch_params=epoch_params,
+                    private_params=private_params,
                     binary_path=binary_path,
                     results_base=results_base,
                     profile_dir=profile_dir,
@@ -530,6 +620,7 @@ def main() -> None:
                     parallel=args.parallel,
                     stale_stat=args.stale_stat,
                     prog=prog,
+                    strategies=selected_strategies,
                 )
             )
     else:
@@ -542,6 +633,7 @@ def main() -> None:
             metrics_min_height=metrics_min_height,
             metrics_max_height=metrics_max_height,
             epoch_params=epoch_params,
+            private_params=private_params,
             binary_path=binary_path,
             results_base=results_base,
             profile_dir=profile_dir,
@@ -552,6 +644,7 @@ def main() -> None:
             parallel=args.parallel,
             stale_stat=args.stale_stat,
             prog=prog,
+            strategies=selected_strategies,
         )
 
     rows = sort_rows(kept_rows + new_rows)

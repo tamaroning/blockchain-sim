@@ -309,6 +309,30 @@ impl Blockchain {
         } else {
             0.0
         };
+
+        let mut private_attack_reorg_success = false;
+        if let Some(honest_set) = honest_minters {
+            let mut prev_on_main: Option<NodeId> = None;
+            for &bid in &main {
+                let block = self.get_block(bid).expect("main chain block must exist");
+                let height = block.height();
+                if min_height.is_some_and(|min_h| height < min_h) {
+                    continue;
+                }
+                if max_height.is_some_and(|max_h| height > max_h) {
+                    continue;
+                }
+                let minter = block.minter();
+                if let Some(prev) = prev_on_main {
+                    if honest_set.contains(&prev) && !honest_set.contains(&minter) {
+                        private_attack_reorg_success = true;
+                        break;
+                    }
+                }
+                prev_on_main = Some(minter);
+            }
+        }
+
         ChainMetrics {
             mined_blocks,
             main_mined_blocks,
@@ -322,6 +346,7 @@ impl Blockchain {
             attacker_main_mined_blocks,
             attacker_stale_blocks,
             attacker_stale_rate,
+            private_attack_reorg_success,
         }
     }
 }

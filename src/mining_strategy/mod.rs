@@ -7,8 +7,10 @@ mod honest;
 mod selfish;
 mod selfish_timewarp;
 mod timewarp;
+mod private_attack;
 
 pub use honest::HonestMiningStrategy;
+pub use private_attack::PrivateAttackMiningStrategy;
 pub use selfish::SelfishMiningStrategy;
 pub use selfish_timewarp::SelfishTimewarpStrategy;
 pub use timewarp::{DEFAULT_MTP_WINDOW_SIZE, TimewarpStrategy};
@@ -98,6 +100,7 @@ pub trait MiningStrategy: Send + Sync {
 pub enum MiningStrategyEnum {
     Honest,
     Selfish,
+    PrivateAttack,
     SelfishTimewarp {
         /// MTP（中央値）算出に使う直近ブロック数。省略時は 11（Bitcoin 既定）。
         #[serde(default = "default_mtp_window_size")]
@@ -115,6 +118,7 @@ impl MiningStrategyEnum {
         match self {
             MiningStrategyEnum::Honest => Box::new(HonestMiningStrategy::default()),
             MiningStrategyEnum::Selfish => Box::new(SelfishMiningStrategy::default()),
+            MiningStrategyEnum::PrivateAttack => Box::new(PrivateAttackMiningStrategy::default()),
             MiningStrategyEnum::SelfishTimewarp { mtp_window_size } => {
                 Box::new(SelfishTimewarpStrategy::with_window_size(*mtp_window_size))
             }

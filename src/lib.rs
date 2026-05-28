@@ -14,7 +14,8 @@ pub use block::Block;
 pub use blockchain::Blockchain;
 pub use event::{Event, EventType};
 pub use mining_strategy::{
-    HonestMiningStrategy, MiningStrategy, MiningStrategyEnum, SelfishMiningStrategy,
+    HonestMiningStrategy, MiningStrategy, MiningStrategyEnum, PrivateAttackMiningStrategy,
+    SelfishMiningStrategy,
 };
 pub use node::Node;
 pub use profile::{NetworkProfile, NodeProfile};
